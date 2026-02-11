@@ -1,0 +1,42 @@
+system_name: ArchSync System
+module_depth: 2
+include:
+  - "backend/*.py"
+  - "backend/**/*.py"
+  - "frontend/*.{js,jsx,ts,tsx}"
+  - "frontend/**/*.{js,jsx,ts,tsx}"
+exclude:
+  - "**/.git/**"
+  - "**/node_modules/**"
+  - "**/.venv/**"
+layers:
+  - name: Frontend
+    match:
+      - "frontend/**"
+  - name: Backend
+    match:
+      - "backend/**"
+default_layer: Misc
+interfaces:
+  - pattern: '(?i)(/api/|router\.|app\.(get|post|put|delete|patch))'
+    protocol: HTTP
+    direction: in
+  - pattern: '(?i)(fetch\(|axios\.)'
+    protocol: HTTP
+    direction: out
+constraints:
+  layer_order:
+    - Frontend
+    - Backend
+    - Misc
+  forbidden_dependencies:
+    - from: Backend
+      to: Frontend
+      severity: high
+llm:
+  enabled: false
+  provider: openai_compatible
+  model: qwen2.5-coder:14b
+  endpoint: "http://127.0.0.1:11434/v1"
+  api_key: ""
+  temperature: 0.0

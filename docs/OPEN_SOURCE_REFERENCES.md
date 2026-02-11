@@ -29,3 +29,8 @@ Adjacent projects (for inspiration / gap analysis):
 
 1. Swark
    - https://github.com/swark-io/swark
+
+Validation target used in self-test:
+
+1. Flask
+   - https://github.com/pallets/flask

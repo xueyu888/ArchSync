@@ -1,0 +1,40 @@
+name: archsync-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Sync deps
+        working-directory: tools/archsync
+        run: uv sync --extra dev
+
+      - name: Install Playwright browser
+        working-directory: tools/archsync
+        run: uv run playwright install --with-deps chromium
+
+      - name: Lint
+        working-directory: tools/archsync
+        run: uv run ruff check src tests
+
+      - name: Test
+        working-directory: tools/archsync
+        run: uv run pytest
+
+      - name: Build demo output
+        run: uv run --directory tools/archsync archsync build --repo .
