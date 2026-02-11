@@ -2,7 +2,7 @@
   "name": "archsync-vscode",
   "displayName": "ArchSync Studio",
   "description": "Non-intrusive VS Code extension for ArchSync architecture analysis and Studio panel.",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "publisher": "archsync",
   "license": "MIT",
   "repository": {
@@ -17,6 +17,7 @@
   ],
   "activationEvents": [
     "onView:archsyncModulesView",
+    "onView:archsyncGraphView",
     "onCommand:archsync.openStudio",
     "onCommand:archsync.startServices",
     "onCommand:archsync.stopServices",
@@ -25,7 +26,8 @@
     "onCommand:archsync.refreshSidebar",
     "onCommand:archsync.rebuildSidebar",
     "onCommand:archsync.revealModuleSource",
-    "onCommand:archsync.focusSidebar"
+    "onCommand:archsync.focusSidebar",
+    "onCommand:archsync.focusGraph"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -65,6 +67,10 @@
       {
         "command": "archsync.focusSidebar",
         "title": "ArchSync: Focus Sidebar"
+      },
+      {
+        "command": "archsync.focusGraph",
+        "title": "ArchSync: Focus Graph"
       }
     ],
     "views": {
@@ -72,6 +78,10 @@
         {
           "id": "archsyncModulesView",
           "name": "Modules"
+        },
+        {
+          "id": "archsyncGraphView",
+          "name": "Graph"
         }
       ]
     },
@@ -88,6 +98,10 @@
       {
         "view": "archsyncModulesView",
         "contents": "Run [Build Architecture Model](command:archsync.buildModel) to load modules and summaries."
+      },
+      {
+        "view": "archsyncGraphView",
+        "contents": "Use [Rebuild Model for Sidebar](command:archsync.rebuildSidebar) and click nodes to drill/open source."
       }
     ],
     "menus": {
@@ -105,6 +119,21 @@
         {
           "command": "archsync.openStudio",
           "when": "view == archsyncModulesView",
+          "group": "navigation@3"
+        },
+        {
+          "command": "archsync.refreshSidebar",
+          "when": "view == archsyncGraphView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "archsync.rebuildSidebar",
+          "when": "view == archsyncGraphView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "archsync.openStudio",
+          "when": "view == archsyncGraphView",
           "group": "navigation@3"
         }
       ],
