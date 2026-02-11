@@ -25,6 +25,7 @@ docs/archsync-selftest/
 node_modules/
 frontend/node_modules/
 frontend/dist/
+vscode-extension/*.vsix
 
 # Editors
 .idea/

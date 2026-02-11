@@ -1,118 +1,123 @@
 # ArchSync
 
-Interface-first architecture diagrams generated from code, with layered drill-down, incremental updates,
-and architecture diff gates for AI-generated code review.
+Interface-first architecture intelligence platform for AI-generated code.
 
-## Why ArchSync
+ArchSync now includes:
 
-LLM agents (Codex/Claude/etc.) write code faster than humans can review line-by-line.
-ArchSync shifts review from raw code volume to architecture impact:
+- `tools/archsync`: analysis/model/render/diff/watch/ci engine
+- `backend`: FastAPI service exposing ArchSync APIs
+- `frontend`: React Studio application for interactive architecture review
+- `vscode-extension`: non-intrusive VS Code plugin (service control + Studio panel)
 
-- What module boundaries changed?
-- What interfaces/ports changed?
-- Are there new cross-layer or forbidden dependencies?
-- Did a cycle appear?
+## Core Value
 
-## What You Get
+Instead of reviewing thousands of AI-generated lines, reviewers inspect:
 
-- Deterministic fact extraction (`Python`, `JS/TS`) from source code
-- Layered architecture model (`System -> Layer -> Module -> File`)
-- Interface/port-aware wiring (in/out ports, protocol labels)
-- Interactive dashboard (`L0/L1/L2`) with click-to-inspect ports
-- Architecture diff reports (`added/removed modules, ports, edges`)
-- Rule gates (`layer order`, `forbidden dependencies`, `cycle detection`)
-- Local LLM enrichment hook (Ollama/vLLM/llama.cpp via OpenAI-compatible API)
-- CI-friendly CLI (`init/build/diff/watch/ci`)
+- architecture boundary changes,
+- interface/port wiring changes,
+- rule violations (cross-layer/forbidden dependencies/cycles),
+- and drill-down evidence.
 
-## Repository Layout
+## Run Full Stack
 
-- `tools/archsync`: Core engine + CLI + tests
-- `docs/ARCHSYNC_PROPOSAL_ZH.md`: Full Chinese design proposal
-- `docs/OPEN_SOURCE_REFERENCES.md`: Upstream OSS components used/referenced
-- `frontend`, `backend`: bootstrap app scaffold used in initial setup
-
-## Quick Start
+### 1) Backend API
 
 ```bash
-# install tool dependencies
+cd backend
+uv sync --extra dev
+uv run uvicorn main:app --reload --host 127.0.0.1 --port 9000
+```
+
+### 2) Frontend Studio
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open: `http://127.0.0.1:5173`
+
+## VS Code Extension
+
+The extension lives in `vscode-extension` and is designed to be non-intrusive:
+it only invokes existing `uv`/`npm`/`archsync` commands and writes normal
+ArchSync outputs (`docs/archsync`, `.archsync`).
+
+```bash
+cd vscode-extension
+npm install
+npm test
+npm run package
+code --install-extension archsync-vscode-0.1.0.vsix --force
+```
+
+## Local LLM (Optional but Recommended)
+
+ArchSync reads local OpenAI-compatible LLM settings from environment variables and
+overrides `.archsync/rules.yaml` automatically:
+
+```bash
+export LOCAL_LLM_URL=http://127.0.0.1:11434/v1
+export LOCAL_LLM_MODEL=qwen2.5-coder:14b
+export LOCAL_LLM_KEY=
+# optional
+export LOCAL_LLM_ENABLED=true
+export LOCAL_LLM_TEMPERATURE=0.0
+```
+
+## CLI (Engine)
+
+```bash
+# initialize
+uv run --directory tools/archsync archsync init --repo .
+
+# build architecture artifacts (full includes mmd/dot/dsl)
+uv run --directory tools/archsync archsync build --repo . --full
+
+# architecture diff and gate
+uv run --directory tools/archsync archsync diff --repo . --base main --head HEAD
+uv run --directory tools/archsync archsync ci --repo . --base main --head HEAD --fail-on high
+
+# watch for incremental updates
+uv run --directory tools/archsync archsync watch --repo .
+```
+
+## Artifacts
+
+Generated under `docs/archsync`:
+
+- `architecture.model.json`
+- `facts.snapshot.json`
+- `mermaid/l*.mmd` (when `--full`)
+- `architecture.dot` (when `--full`)
+- `workspace.dsl` (when `--full`)
+- `frontend-studio-e2e.png` (Playwright end-to-end screenshot)
+
+## Proposal & Implementation Mapping
+
+- Proposal: `docs/ARCHSYNC_PROPOSAL_ZH.md`
+- Implementation map: `docs/ARCHSYNC_IMPLEMENTATION_MAP_ZH.md`
+
+## Quality Gates
+
+```bash
+# engine
 cd tools/archsync
 uv sync --extra dev
-```
-
-```bash
-# initialize config at repo root
-uv run --directory tools/archsync archsync init --repo .
-```
-
-```bash
-# build architecture model + dashboard
-uv run --directory tools/archsync archsync build --repo .
-```
-
-Outputs:
-
-- `docs/archsync/index.html` (interactive dashboard)
-- `docs/archsync/architecture.model.json`
-- `docs/archsync/facts.snapshot.json`
-
-## Diff & CI Gate
-
-```bash
-# compare two refs
-uv run --directory tools/archsync archsync diff --repo . --base main --head HEAD
-```
-
-```bash
-# fail CI on high+ severity violations
-uv run --directory tools/archsync archsync ci --repo . --base main --head HEAD --fail-on high
-```
-
-## Watch Mode
-
-```bash
-uv run --directory tools/archsync archsync watch --repo . --interval 1.5
-```
-
-When code changes, ArchSync rebuilds diagrams incrementally from source state.
-
-## Local LLM Integration
-
-Edit `.archsync/rules.yaml`:
-
-```yaml
-llm:
-  enabled: true
-  provider: openai_compatible
-  model: qwen2.5-coder:14b
-  endpoint: "http://127.0.0.1:11434/v1"
-  api_key: ""
-  temperature: 0.0
-```
-
-ArchSync stores auditable logs in `.archsync/llm_audit/` with request/response payloads.
-
-## Tests
-
-```bash
-cd tools/archsync
 uv run ruff check src tests
 uv run pytest
+
+# backend
+cd ../../backend
+uv sync --extra dev
+uv run pytest
+
+# frontend
+cd ../frontend
+npm run lint
+npm run build
 ```
-
-Includes Playwright e2e test that loads dashboard, clicks a module node, and writes a screenshot.
-
-## Open-Source Self-Test (Done)
-
-ArchSync was self-validated on an external OSS repo (`pallets/flask`) with:
-
-1. `archsync build`
-2. Playwright click + screenshot (`playwright-selftest.png`)
-
-Reference screenshot committed at `docs/selftest-flask-playwright.png`.
-
-## GitHub Actions
-
-CI workflow file: `.github/workflows/archsync-ci.yml`
 
 ## License
 

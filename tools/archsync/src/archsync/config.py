@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -9,22 +10,28 @@ import yaml
 DEFAULT_RULES = """system_name: ArchSync System
 module_depth: 2
 include:
-  - "backend/*.py"
-  - "backend/**/*.py"
-  - "frontend/*.{js,jsx,ts,tsx}"
-  - "frontend/**/*.{js,jsx,ts,tsx}"
+  - "**/*.{py,js,jsx,ts,tsx,c,cc,cpp,h,hpp,hh}"
 exclude:
   - "**/.git/**"
   - "**/node_modules/**"
   - "**/.venv/**"
+  - "**/__pycache__/**"
+  - "**/.pytest_cache/**"
+  - "**/.mypy_cache/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/coverage/**"
 layers:
+  - name: Engine
+    match:
+      - "tools/archsync/**"
   - name: Frontend
     match:
       - "frontend/**"
   - name: Backend
     match:
       - "backend/**"
-default_layer: Misc
+default_layer: Workspace
 interfaces:
   - pattern: '(?i)(/api/|router\\.|app\\.(get|post|put|delete|patch))'
     protocol: HTTP
@@ -34,9 +41,10 @@ interfaces:
     direction: out
 constraints:
   layer_order:
+    - Engine
     - Frontend
     - Backend
-    - Misc
+    - Workspace
   forbidden_dependencies:
     - from: Backend
       to: Frontend
@@ -142,6 +150,35 @@ class RulesConfig:
             api_key=llm_data.get("api_key", ""),
             temperature=float(llm_data.get("temperature", 0.0)),
         )
+
+        env_enabled = os.getenv("LOCAL_LLM_ENABLED", "").strip().lower()
+        env_provider = os.getenv("LOCAL_LLM_PROVIDER", "").strip()
+        env_model = os.getenv("LOCAL_LLM_MODEL", "").strip()
+        env_endpoint = os.getenv("LOCAL_LLM_URL", "").strip()
+        env_api_key = os.getenv("LOCAL_LLM_KEY", "").strip()
+        env_temperature = os.getenv("LOCAL_LLM_TEMPERATURE", "").strip()
+
+        if env_provider:
+            llm.provider = env_provider
+        if env_model:
+            llm.model = env_model
+        if env_endpoint:
+            llm.endpoint = env_endpoint
+        if env_api_key:
+            llm.api_key = env_api_key
+        if env_temperature:
+            try:
+                llm.temperature = float(env_temperature)
+            except ValueError:
+                pass
+
+        if env_enabled in {"1", "true", "yes", "on"}:
+            llm.enabled = True
+        elif env_enabled in {"0", "false", "no", "off"}:
+            llm.enabled = False
+        elif env_model or env_endpoint or env_api_key:
+            llm.enabled = True
+
         return cls(
             system_name=data.get("system_name", "ArchSync System"),
             module_depth=int(data.get("module_depth", 2)),

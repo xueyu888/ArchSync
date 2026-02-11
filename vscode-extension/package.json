@@ -1,0 +1,197 @@
+{
+  "name": "archsync-vscode",
+  "displayName": "ArchSync Studio",
+  "description": "Non-intrusive VS Code extension for ArchSync architecture analysis and Studio panel.",
+  "version": "0.2.2",
+  "publisher": "archsync",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xueyu888/ArchSync.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:archsyncModulesView",
+    "onCommand:archsync.openStudio",
+    "onCommand:archsync.startServices",
+    "onCommand:archsync.stopServices",
+    "onCommand:archsync.buildModel",
+    "onCommand:archsync.openModelJson",
+    "onCommand:archsync.refreshSidebar",
+    "onCommand:archsync.rebuildSidebar",
+    "onCommand:archsync.revealModuleSource",
+    "onCommand:archsync.focusSidebar"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "archsync.openStudio",
+        "title": "ArchSync: Open Studio"
+      },
+      {
+        "command": "archsync.startServices",
+        "title": "ArchSync: Start Services"
+      },
+      {
+        "command": "archsync.stopServices",
+        "title": "ArchSync: Stop Services"
+      },
+      {
+        "command": "archsync.buildModel",
+        "title": "ArchSync: Build Architecture Model"
+      },
+      {
+        "command": "archsync.openModelJson",
+        "title": "ArchSync: Open architecture.model.json"
+      },
+      {
+        "command": "archsync.refreshSidebar",
+        "title": "ArchSync: Refresh Sidebar"
+      },
+      {
+        "command": "archsync.rebuildSidebar",
+        "title": "ArchSync: Rebuild Model for Sidebar"
+      },
+      {
+        "command": "archsync.revealModuleSource",
+        "title": "ArchSync: Reveal Module Source"
+      },
+      {
+        "command": "archsync.focusSidebar",
+        "title": "ArchSync: Focus Sidebar"
+      }
+    ],
+    "views": {
+      "archsync": [
+        {
+          "id": "archsyncModulesView",
+          "name": "Modules"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "archsync",
+          "title": "ArchSync",
+          "icon": "media/archsync.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "archsyncModulesView",
+        "contents": "Run [Build Architecture Model](command:archsync.buildModel) to load modules and summaries."
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "archsync.refreshSidebar",
+          "when": "view == archsyncModulesView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "archsync.rebuildSidebar",
+          "when": "view == archsyncModulesView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "archsync.openStudio",
+          "when": "view == archsyncModulesView",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "archsync.revealModuleSource",
+          "when": "view == archsyncModulesView && viewItem == module",
+          "group": "inline@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ArchSync",
+      "properties": {
+        "archsync.autoStartServices": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-start backend/frontend when opening Studio."
+        },
+        "archsync.openExternalInsteadOfWebview": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open Studio in external browser instead of VS Code webview panel."
+        },
+        "archsync.frontendMode": {
+          "type": "string",
+          "enum": [
+            "preview",
+            "dev"
+          ],
+          "default": "preview",
+          "description": "Frontend mode used when extension starts services. preview is more stable and non-intrusive."
+        },
+        "archsync.backendHost": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Backend bind host."
+        },
+        "archsync.backendPort": {
+          "type": "number",
+          "default": 9000,
+          "description": "Backend bind port."
+        },
+        "archsync.frontendHost": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Frontend bind host."
+        },
+        "archsync.frontendPort": {
+          "type": "number",
+          "default": 5173,
+          "description": "Frontend bind port."
+        },
+        "archsync.uvCommand": {
+          "type": "string",
+          "default": "uv",
+          "description": "Command used to run backend/archsync CLI."
+        },
+        "archsync.npmCommand": {
+          "type": "string",
+          "default": "npm",
+          "description": "Command used to run frontend scripts."
+        },
+        "archsync.backendDir": {
+          "type": "string",
+          "default": "backend",
+          "description": "Path to backend folder, relative to workspace root."
+        },
+        "archsync.frontendDir": {
+          "type": "string",
+          "default": "frontend",
+          "description": "Path to frontend folder, relative to workspace root."
+        },
+        "archsync.engineDir": {
+          "type": "string",
+          "default": "tools/archsync",
+          "description": "Path to ArchSync engine folder, relative to workspace root."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node ./node_modules/mocha/bin/mocha.js \"test/**/*.test.js\" --timeout 240000",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.2",
+    "mocha": "^10.8.2"
+  }
+}

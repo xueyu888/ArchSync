@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from pathlib import PurePosixPath
 
@@ -22,12 +23,22 @@ def _pick_layer(path: str, rules: RulesConfig) -> str:
     return rules.default_layer
 
 
-def _group_path(path: str, depth: int) -> str:
+def _group_paths(path: str, depth: int) -> list[str]:
     parts = list(PurePosixPath(path).parts)
-    if not parts:
-        return path
-    group_len = min(max(1, depth), max(1, len(parts) - 1))
-    return "/".join(parts[:group_len])
+    if len(parts) <= 1:
+        return []
+
+    directories = parts[:-1]
+    if not directories:
+        return []
+
+    # Keep compatibility with `module_depth` as the first grouping depth,
+    # then continue drilling with deeper folders until the leaf file.
+    root_depth = min(max(1, depth), len(directories))
+    output = ["/".join(directories[:root_depth])]
+    for idx in range(root_depth + 1, len(directories) + 1):
+        output.append("/".join(directories[:idx]))
+    return output
 
 
 def _route_key(name: str) -> str:
@@ -44,6 +55,65 @@ def _is_route_match(source: str, target: str) -> bool:
     source_trim = source.split("?", 1)[0]
     target_trim = target.split("?", 1)[0]
     return source_trim == target_trim
+
+
+CHINESE_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _contains_chinese(text: str) -> bool:
+    return bool(CHINESE_RE.search(text))
+
+
+def _default_summary_for_module(
+    node: ModuleNode,
+    child_count: int,
+    port_count: int,
+    incoming_count: int,
+    outgoing_count: int,
+) -> str:
+    if node.level == 0:
+        return "系统顶层视图，汇总各层模块与主要连接关系。"
+    if child_count > 0:
+        return f"{node.layer}层容器模块，包含{child_count}个子模块。"
+    if port_count > 0:
+        return f"{node.layer}层功能模块，提供{port_count}个接口端口。"
+    if incoming_count > 0 or outgoing_count > 0:
+        return f"{node.layer}层实现模块，入链路{incoming_count}条、出链路{outgoing_count}条。"
+    if node.path and "/" in node.path and "." in PurePosixPath(node.path).name:
+        return f"{node.layer}层实现文件，承载具体业务逻辑。"
+    return f"{node.layer}层基础模块，负责结构组织与协同。"
+
+
+def _build_default_summaries(
+    modules: list[ModuleNode],
+    ports: list[PortNode],
+    edges: list[ArchitectureEdge],
+) -> dict[str, str]:
+    child_count_by_parent: dict[str, int] = defaultdict(int)
+    for node in modules:
+        if node.parent_id:
+            child_count_by_parent[node.parent_id] += 1
+
+    port_count_by_module: dict[str, int] = defaultdict(int)
+    for port in ports:
+        port_count_by_module[port.module_id] += 1
+
+    incoming_count_by_module: dict[str, int] = defaultdict(int)
+    outgoing_count_by_module: dict[str, int] = defaultdict(int)
+    for edge in edges:
+        outgoing_count_by_module[edge.src_id] += 1
+        incoming_count_by_module[edge.dst_id] += 1
+
+    output: dict[str, str] = {}
+    for node in modules:
+        output[node.id] = _default_summary_for_module(
+            node=node,
+            child_count=child_count_by_parent.get(node.id, 0),
+            port_count=port_count_by_module.get(node.id, 0),
+            incoming_count=incoming_count_by_module.get(node.id, 0),
+            outgoing_count=outgoing_count_by_module.get(node.id, 0),
+        )
+    return output
 
 
 def build_architecture_model(
@@ -64,8 +134,6 @@ def build_architecture_model(
         )
     ]
 
-    file_to_group: dict[str, str] = {}
-    file_to_layer: dict[str, str] = {}
     fact_module_to_file_node: dict[str, str] = {}
     fact_module_to_group_node: dict[str, str] = {}
 
@@ -74,7 +142,6 @@ def build_architecture_model(
 
     for fact in snapshot.modules:
         layer = _pick_layer(fact.path, rules)
-        file_to_layer[fact.path] = layer
 
         if layer not in layer_nodes:
             layer_id = f"layer:{layer}"
@@ -88,47 +155,53 @@ def build_architecture_model(
                 evidence_ids=[],
             )
 
-        group_path = _group_path(fact.path, rules.module_depth)
-        group_id = stable_id("group", layer, group_path)
-        if group_id not in group_nodes:
-            group_nodes[group_id] = ModuleNode(
-                id=group_id,
-                name=group_path,
-                layer=layer,
-                level=2,
-                path=group_path,
-                parent_id=layer_nodes[layer].id,
-                evidence_ids=[],
-            )
+        parent_id = layer_nodes[layer].id
+        parent_level = 1
+        deepest_group_id = parent_id
+
+        for group_path in _group_paths(fact.path, rules.module_depth):
+            group_id = stable_id("group", layer, group_path)
+            if group_id not in group_nodes:
+                group_nodes[group_id] = ModuleNode(
+                    id=group_id,
+                    name=PurePosixPath(group_path).name or group_path,
+                    layer=layer,
+                    level=parent_level + 1,
+                    path=group_path,
+                    parent_id=parent_id,
+                    evidence_ids=[],
+                )
+            parent_id = group_id
+            parent_level = group_nodes[group_id].level
+            deepest_group_id = group_id
 
         file_node_id = stable_id("file", fact.path)
         file_node = ModuleNode(
             id=file_node_id,
-            name=fact.path,
+            name=PurePosixPath(fact.path).name or fact.path,
             layer=layer,
-            level=3,
+            level=parent_level + 1,
             path=fact.path,
-            parent_id=group_id,
+            parent_id=parent_id,
             evidence_ids=[],
         )
         modules.append(file_node)
 
         fact_module_to_file_node[fact.id] = file_node_id
-        fact_module_to_group_node[fact.id] = group_id
-        file_to_group[fact.path] = group_id
+        fact_module_to_group_node[fact.id] = deepest_group_id
 
     modules.extend(layer_nodes.values())
     modules.extend(group_nodes.values())
 
     ports: list[PortNode] = []
     for item in snapshot.interfaces:
-        group_id = fact_module_to_group_node.get(item.module_id)
-        if not group_id:
+        file_id = fact_module_to_file_node.get(item.module_id)
+        if not file_id:
             continue
         ports.append(
             PortNode(
                 id=item.id,
-                module_id=group_id,
+                module_id=file_id,
                 name=item.name,
                 protocol=item.protocol,
                 direction=item.direction,
@@ -211,19 +284,35 @@ def build_architecture_model(
                 )
 
     provider = build_provider(rules.llm, llm_audit_dir)
+    default_summaries = _build_default_summaries(modules=modules, ports=ports, edges=edges)
+
     enrichables = [
         ModuleDraft(id=node.id, name=node.name, layer=node.layer, path=node.path)
         for node in modules
-        if node.level in {1, 2}
+        if node.level >= 1
     ]
     enrichment = provider.enrich(enrichables)
+
+    merged_summaries = dict(default_summaries)
+    summary_source = {module_id: "fallback" for module_id in default_summaries}
+    for module_id, summary in enrichment.summaries.items():
+        clean = summary.strip()
+        if not clean:
+            continue
+        if not _contains_chinese(clean):
+            continue
+        merged_summaries[module_id] = clean
+        summary_source[module_id] = "llm"
 
     metadata = {
         "snapshot_id": snapshot.snapshot_id,
         "module_count": len(modules),
         "port_count": len(ports),
         "edge_count": len(edges),
-        "llm_summaries": enrichment.summaries,
+        "llm_summaries": merged_summaries,
+        "llm_summary_source": summary_source,
+        "coverage": snapshot.metadata.get("coverage", {}),
+        "language_breakdown": snapshot.metadata.get("language_breakdown", {}),
     }
 
     renamed: list[ModuleNode] = []

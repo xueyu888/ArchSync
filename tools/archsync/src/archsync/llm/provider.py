@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Protocol
 
@@ -55,17 +56,20 @@ class OpenAICompatibleProvider:
             for item in modules
         ]
         prompt = {
-            "task": "rename_and_summarize_modules",
+            "task": "summarize_modules_in_chinese",
             "rules": [
-                "Do not invent edges or files.",
-                "Keep names concise and architecture focused.",
-                "Respond strict JSON.",
+                "不要虚构不存在的文件、依赖或接口。",
+                "每个模块输出一句简短中文说明，15-35个字。",
+                "说明需聚焦模块职责与层次定位。",
+                "严格输出 JSON，不要输出额外文本。",
             ],
             "modules": payload_modules,
             "schema": {
-                "renamed_modules": [{"id": "str", "name": "str", "summary": "str"}],
+                "module_summaries": [{"id": "str", "summary_zh": "str", "name": "str(optional)"}],
             },
         }
+        prompt_blob = json.dumps(prompt, ensure_ascii=False, sort_keys=True)
+        prompt_hash = sha256(prompt_blob.encode()).hexdigest()
 
         headers = {"Content-Type": "application/json"}
         if self.config.api_key:
@@ -75,7 +79,7 @@ class OpenAICompatibleProvider:
             "model": self.config.model,
             "temperature": self.config.temperature,
             "messages": [
-                {"role": "system", "content": "You are an architecture naming assistant."},
+                {"role": "system", "content": "你是软件架构分析助手，负责输出简洁准确的中文模块说明。"},
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
             ],
             "response_format": {"type": "json_object"},
@@ -97,6 +101,8 @@ class OpenAICompatibleProvider:
             "id": stable_id(self.config.model, utc_now_iso(), str(len(modules))),
             "timestamp": utc_now_iso(),
             "provider": "openai_compatible",
+            "prompt_hash": prompt_hash,
+            "input_evidence_ids": [item.id for item in modules],
             "model": self.config.model,
             "endpoint": self.config.endpoint,
             "temperature": self.config.temperature,
@@ -112,12 +118,24 @@ class OpenAICompatibleProvider:
 
         names: dict[str, str] = {}
         summaries: dict[str, str] = {}
+
+        for item in response_json.get("module_summaries", []):
+            module_id = item.get("id")
+            if not module_id:
+                continue
+            name = item.get("name", "")
+            summary = item.get("summary_zh", "") or item.get("summary", "")
+            if isinstance(name, str) and name.strip():
+                names[module_id] = name.strip()
+            if isinstance(summary, str) and summary.strip():
+                summaries[module_id] = summary.strip()
+
         for item in response_json.get("renamed_modules", []):
             module_id = item.get("id")
             if not module_id:
                 continue
             name = item.get("name", "")
-            summary = item.get("summary", "")
+            summary = item.get("summary", "") or item.get("summary_zh", "")
             if isinstance(name, str) and name.strip():
                 names[module_id] = name.strip()
             if isinstance(summary, str) and summary.strip():

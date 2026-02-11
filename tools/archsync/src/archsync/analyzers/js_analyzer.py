@@ -14,6 +14,7 @@ EXPORT_RE = re.compile(r"^\s*export\s+(?:default\s+)?(?:class|function|const|let
 ROUTE_RE = re.compile(r"(?:app|router)\.(get|post|put|delete|patch)\(\s*['\"]([^'\"]+)['\"]")
 FETCH_RE = re.compile(r"fetch\(\s*['\"]([^'\"]+)['\"]")
 AXIOS_RE = re.compile(r"axios\.(get|post|put|delete|patch)\(\s*['\"]([^'\"]+)['\"]")
+API_WRAPPER_RE = re.compile(r"\b(apiGet|apiPost|apiPut|apiDelete|apiPatch)\(\s*['\"]([^'\"]+)['\"]")
 
 
 def _normalize_relpath(value: str) -> str:
@@ -65,6 +66,10 @@ def analyze_js_file(
     edge_seen: set[tuple[str, str, str, str]] = set()
 
     lines = source.splitlines()
+
+    def wrapper_method(name: str) -> str:
+        suffix = name.lower().replace("api", "")
+        return suffix.upper() if suffix in {"get", "post", "put", "delete", "patch"} else "HTTP"
 
     def add_evidence(line_no: int, parser: str) -> Evidence:
         evidence_id = stable_id(rel_path, str(line_no), parser)
@@ -162,5 +167,11 @@ def analyze_js_file(
             method = axios_match.group(1).upper()
             route = axios_match.group(2)
             add_interface(idx, f"{method} {route}", "HTTP", "out", "axios call")
+
+        wrapper_match = API_WRAPPER_RE.search(line)
+        if wrapper_match:
+            method = wrapper_method(wrapper_match.group(1))
+            route = wrapper_match.group(2)
+            add_interface(idx, f"{method} {route}", "HTTP", "out", "api wrapper call")
 
     return AnalyzerResult(symbols=symbols, interfaces=interfaces, edges=edges, evidences=evidences)

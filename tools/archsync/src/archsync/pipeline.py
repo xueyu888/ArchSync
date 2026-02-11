@@ -26,6 +26,8 @@ def run_build(
     output_dir: Path,
     state_db: Path,
     commit_id: str | None = None,
+    full: bool = False,
+    only_views: set[str] | None = None,
 ) -> BuildResult:
     commit = commit_id or current_commit(repo_root)
 
@@ -36,7 +38,13 @@ def run_build(
     llm_audit_dir = state_db.parent / "llm_audit"
     model = build_architecture_model(snapshot=snapshot, rules=rules, llm_audit_dir=llm_audit_dir)
 
-    outputs = render_outputs(model=model, rules=rules, output_dir=output_dir)
+    outputs = render_outputs(
+        model=model,
+        rules=rules,
+        output_dir=output_dir,
+        full=full,
+        only_views=only_views,
+    )
     write_json(output_dir / "facts.snapshot.json", snapshot.to_dict())
 
     return BuildResult(snapshot=snapshot, model=model, outputs=outputs)

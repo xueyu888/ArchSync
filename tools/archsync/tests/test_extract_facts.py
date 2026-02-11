@@ -20,3 +20,8 @@ def test_extract_facts_detects_modules_edges_and_interfaces() -> None:
 
     edge_labels = {item.label for item in snapshot.edges}
     assert any("import ./api" in label for label in edge_labels)
+
+    coverage = snapshot.metadata.get("coverage", {})
+    assert coverage.get("analyzed_files", 0) > 0
+    assert coverage.get("eligible_files", 0) >= coverage.get("analyzed_files", 0)
+    assert float(coverage.get("coverage_ratio", 0)) > 0

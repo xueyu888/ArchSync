@@ -1,22 +1,28 @@
 system_name: ArchSync System
 module_depth: 2
 include:
-  - "backend/*.py"
-  - "backend/**/*.py"
-  - "frontend/*.{js,jsx,ts,tsx}"
-  - "frontend/**/*.{js,jsx,ts,tsx}"
+  - "**/*.{py,js,jsx,ts,tsx,c,cc,cpp,h,hpp,hh}"
 exclude:
   - "**/.git/**"
   - "**/node_modules/**"
   - "**/.venv/**"
+  - "**/__pycache__/**"
+  - "**/.pytest_cache/**"
+  - "**/.mypy_cache/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/coverage/**"
 layers:
+  - name: Engine
+    match:
+      - "tools/archsync/**"
   - name: Frontend
     match:
       - "frontend/**"
   - name: Backend
     match:
       - "backend/**"
-default_layer: Misc
+default_layer: Workspace
 interfaces:
   - pattern: '(?i)(/api/|router\.|app\.(get|post|put|delete|patch))'
     protocol: HTTP
@@ -26,9 +32,10 @@ interfaces:
     direction: out
 constraints:
   layer_order:
+    - Engine
     - Frontend
     - Backend
-    - Misc
+    - Workspace
   forbidden_dependencies:
     - from: Backend
       to: Frontend

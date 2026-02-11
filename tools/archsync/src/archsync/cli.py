@@ -53,6 +53,11 @@ def build(
     output: Path = typer.Option(Path("docs/archsync"), help="Output directory"),
     state_db: Path = typer.Option(Path(".archsync/state.db"), help="SQLite state database"),
     commit_id: str = typer.Option("", help="Override commit id"),
+    full: bool = typer.Option(
+        False,
+        "--full",
+        help="Generate additional artifacts (Mermaid, DOT, Structurizr DSL)",
+    ),
 ) -> None:
     repo = repo.resolve()
     rules_path = (repo / rules).resolve() if not rules.is_absolute() else rules
@@ -66,13 +71,16 @@ def build(
         output_dir=output_dir,
         state_db=state_path,
         commit_id=commit_id or None,
+        full=full,
     )
 
     typer.echo("[archsync] build complete")
     typer.echo(f"- modules: {len(result.model.modules)}")
     typer.echo(f"- ports: {len(result.model.ports)}")
     typer.echo(f"- edges: {len(result.model.edges)}")
-    typer.echo(f"- dashboard: {result.outputs['dashboard']}")
+    typer.echo(f"- model: {result.outputs['model_json']}")
+    if full:
+        typer.echo(f"- extra artifacts: mermaid/dot/dsl in {output_dir}")
 
 
 @app.command()

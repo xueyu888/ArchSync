@@ -35,6 +35,7 @@ def write_diff_markdown(report: DiffReport, output_path: Path) -> None:
     section("Removed Ports", report.removed_ports)
     section("Added Edges", report.added_edges)
     section("Removed Edges", report.removed_edges)
+    section("API Surface Changes", report.api_surface_changes)
 
     lines.append("## Rule Violations")
     if not report.violations:

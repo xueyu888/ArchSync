@@ -43,9 +43,12 @@ def test_cli_build_and_diff(tmp_path) -> None:
     )
     _commit_all(repo, "feat: add health endpoint call")
 
-    build = runner.invoke(app, ["build", "--repo", str(repo)])
+    build = runner.invoke(app, ["build", "--repo", str(repo), "--full"])
     assert build.exit_code == 0
-    assert (repo / "docs" / "archsync" / "index.html").exists()
+    assert (repo / "docs" / "archsync" / "architecture.model.json").exists()
+    assert (repo / "docs" / "archsync" / "workspace.dsl").exists()
+    assert (repo / "docs" / "archsync" / "architecture.dot").exists()
+    assert (repo / "docs" / "archsync" / "mermaid" / "l1.mmd").exists()
 
     diff = runner.invoke(
         app,

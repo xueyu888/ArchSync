@@ -71,6 +71,7 @@ class FactsSnapshot(Serializable):
     interfaces: list[InterfaceFact] = field(default_factory=list)
     edges: list[EdgeFact] = field(default_factory=list)
     evidences: list[Evidence] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def create(cls, commit_id: str, repo_root: str) -> FactsSnapshot:
@@ -149,6 +150,7 @@ class DiffReport(Serializable):
     removed_ports: list[str] = field(default_factory=list)
     added_edges: list[str] = field(default_factory=list)
     removed_edges: list[str] = field(default_factory=list)
+    api_surface_changes: list[str] = field(default_factory=list)
     violations: list[LayerViolation] = field(default_factory=list)
     cycles: list[list[str]] = field(default_factory=list)
     changed_files: list[str] = field(default_factory=list)
