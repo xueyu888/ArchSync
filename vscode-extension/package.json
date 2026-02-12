@@ -2,7 +2,7 @@
   "name": "archsync-vscode",
   "displayName": "ArchSync Studio",
   "description": "Non-intrusive VS Code extension for ArchSync architecture analysis and Studio panel.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "archsync",
   "license": "MIT",
   "repository": {
@@ -17,8 +17,8 @@
   ],
   "activationEvents": [
     "onView:archsyncModulesView",
-    "onView:archsyncGraphView",
     "onCommand:archsync.openStudio",
+    "onCommand:archsync.openGraphPane",
     "onCommand:archsync.startServices",
     "onCommand:archsync.stopServices",
     "onCommand:archsync.buildModel",
@@ -35,6 +35,10 @@
       {
         "command": "archsync.openStudio",
         "title": "ArchSync: Open Studio"
+      },
+      {
+        "command": "archsync.openGraphPane",
+        "title": "ArchSync: Open Graph Pane"
       },
       {
         "command": "archsync.startServices",
@@ -78,11 +82,6 @@
         {
           "id": "archsyncModulesView",
           "name": "Modules"
-        },
-        {
-          "id": "archsyncGraphView",
-          "name": "Graph",
-          "type": "webview"
         }
       ]
     },
@@ -119,19 +118,9 @@
           "group": "navigation@3"
         },
         {
-          "command": "archsync.refreshSidebar",
-          "when": "view == archsyncGraphView",
-          "group": "navigation@1"
-        },
-        {
-          "command": "archsync.rebuildSidebar",
-          "when": "view == archsyncGraphView",
-          "group": "navigation@2"
-        },
-        {
-          "command": "archsync.openStudio",
-          "when": "view == archsyncGraphView",
-          "group": "navigation@3"
+          "command": "archsync.openGraphPane",
+          "when": "view == archsyncModulesView",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [

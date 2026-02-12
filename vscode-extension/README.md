@@ -10,9 +10,10 @@ Non-intrusive VS Code extension for ArchSync.
 - Opens generated `docs/archsync/architecture.model.json` quickly.
 - Shows a dedicated Activity Bar view (`ArchSync` icon) with:
   - `Modules` tree hierarchy
-  - `Graph` visual architecture view (drill-down, edge wiring)
+- Opens `Graph` in an editor pane (split view with source code), with drill-down and edge wiring.
 - Displays Chinese module summary + source (`LLM` or `Fallback`) in tooltip.
-- Clicks graph/tree modules to jump and highlight source line in editor.
+- Clicks tree node to sync graph pane and source code location.
+- Clicks graph module to drill/open source and highlight source line in editor.
 - Active editor file highlights corresponding module in graph.
 
 The extension does not modify source files in your project. It only calls existing commands
@@ -21,6 +22,7 @@ The extension does not modify source files in your project. It only calls existi
 ## Commands
 
 - `ArchSync: Open Studio`
+- `ArchSync: Open Graph Pane`
 - `ArchSync: Start Services`
 - `ArchSync: Stop Services`
 - `ArchSync: Build Architecture Model`
@@ -63,5 +65,5 @@ npm run package
 Install locally:
 
 ```bash
-code --install-extension archsync-vscode-0.3.0.vsix --force
+code --install-extension archsync-vscode-0.3.1.vsix --force
 ```

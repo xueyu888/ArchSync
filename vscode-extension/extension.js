@@ -16,7 +16,6 @@ let revealDecoration;
 
 const REVEAL_FLASH_MS = 1800;
 const MODULES_VIEW_ID = 'archsyncModulesView';
-const GRAPH_VIEW_ID = 'archsyncGraphView';
 const ARCHSYNC_VIEW_CONTAINER_CMD = 'workbench.view.extension.archsync';
 
 function getWorkspaceRoot() {
@@ -345,15 +344,6 @@ class ArchSyncSidebarProvider {
     }
     item.tooltip = tooltip;
 
-    const sourceHint = resolveSourceHint(this.bundle, module.id);
-    if (sourceHint) {
-      item.command = {
-        command: 'archsync.revealModuleSource',
-        title: 'Reveal Module Source',
-        arguments: [sourceHint],
-      };
-    }
-
     return item;
   }
 
@@ -363,14 +353,21 @@ class ArchSyncSidebarProvider {
     }
     this.bundle = loadModelBundle(this.root, this.logger);
   }
+
+  resolveSourceHint(moduleId) {
+    if (!this.bundle) {
+      return null;
+    }
+    return resolveSourceHint(this.bundle, moduleId);
+  }
 }
 
-class ArchSyncGraphViewProvider {
+class ArchSyncGraphPanelController {
   constructor(logger) {
     this.logger = logger;
     this.root = '';
     this.bundle = null;
-    this.view = null;
+    this.panel = null;
     this.currentParentId = '';
     this.selectedModuleId = '';
     this.highlightModuleId = '';
@@ -393,16 +390,30 @@ class ArchSyncGraphViewProvider {
     this.render().catch(() => {});
   }
 
-  async resolveWebviewView(webviewView) {
-    this.view = webviewView;
-    this.view.webview.options = {
+  async ensurePanel() {
+    if (this.panel) {
+      this.panel.reveal(vscode.ViewColumn.Beside, false);
+      return this.panel;
+    }
+
+    this.panel = vscode.window.createWebviewPanel(
+      'archsyncGraphPanel',
+      'ArchSync Graph',
+      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: false },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+      },
+    );
+
+    this.panel.webview.options = {
       enableScripts: true,
     };
 
     const nonce = Math.random().toString(36).slice(2);
-    this.view.webview.html = this._html(nonce);
+    this.panel.webview.html = this._html(nonce);
 
-    this.view.webview.onDidReceiveMessage(async (message) => {
+    this.panel.webview.onDidReceiveMessage(async (message) => {
       const type = message?.type;
       if (type === 'refresh') {
         this.refresh();
@@ -429,12 +440,20 @@ class ArchSyncGraphViewProvider {
       }
     });
 
+    this.panel.onDidDispose(() => {
+      this.panel = null;
+    });
+
     await this.render();
+    return this.panel;
   }
 
-  async focusModule(moduleId) {
+  async focusModule(moduleId, options = {}) {
     if (!moduleId) {
       return;
+    }
+    if (options.ensureOpen) {
+      await this.ensurePanel();
     }
     await this._ensureBundle();
     if (!this.bundle || !this.bundle.moduleById.has(moduleId)) {
@@ -557,14 +576,14 @@ class ArchSyncGraphViewProvider {
   }
 
   async render() {
-    if (!this.view) {
+    if (!this.panel) {
       return;
     }
 
     await this._ensureBundle();
 
     if (!this.bundle || !this.bundle.systemModule) {
-      this.view.webview.postMessage({ type: 'state', payload: { ready: false } });
+      this.panel.webview.postMessage({ type: 'state', payload: { ready: false } });
       return;
     }
 
@@ -634,7 +653,7 @@ class ArchSyncGraphViewProvider {
         : null,
     };
 
-    this.view.webview.postMessage({ type: 'state', payload });
+    this.panel.webview.postMessage({ type: 'state', payload });
   }
 
   async _ensureBundle() {
@@ -718,6 +737,13 @@ class ArchSyncGraphViewProvider {
 </body>
 </html>`;
   }
+
+  dispose() {
+    if (this.panel) {
+      this.panel.dispose();
+      this.panel = null;
+    }
+  }
 }
 
 async function withManager(task, providers = []) {
@@ -800,15 +826,13 @@ function activate(context) {
   context.subscriptions.push(outputChannel);
 
   const sidebarProvider = new ArchSyncSidebarProvider(outputChannel);
-  const graphProvider = new ArchSyncGraphViewProvider(outputChannel);
+  const graphProvider = new ArchSyncGraphPanelController(outputChannel);
 
   const treeView = vscode.window.createTreeView(MODULES_VIEW_ID, {
     treeDataProvider: sidebarProvider,
     showCollapseAll: true,
   });
   context.subscriptions.push(treeView);
-
-  context.subscriptions.push(vscode.window.registerWebviewViewProvider(GRAPH_VIEW_ID, graphProvider));
 
   const root = getWorkspaceRoot();
   if (root) {
@@ -824,10 +848,14 @@ function activate(context) {
     graphProvider.refresh();
   }));
 
-  context.subscriptions.push(treeView.onDidChangeSelection((event) => {
+  context.subscriptions.push(treeView.onDidChangeSelection(async (event) => {
     const selected = event.selection?.[0];
     if (selected?.moduleId) {
-      graphProvider.focusModule(selected.moduleId).catch(() => {});
+      await graphProvider.focusModule(selected.moduleId, { ensureOpen: true });
+      const sourceHint = sidebarProvider.resolveSourceHint(selected.moduleId);
+      if (sourceHint) {
+        await revealSourceLocation(sourceHint);
+      }
     }
   }));
 
@@ -843,8 +871,21 @@ function activate(context) {
     graphProvider.refresh();
   });
 
-  register(context, 'archsync.revealModuleSource', async (sourceHint) => {
+  register(context, 'archsync.revealModuleSource', async (sourceHintOrItem) => {
+    let sourceHint = sourceHintOrItem;
+    let moduleId = sourceHintOrItem?.moduleId || sourceHintOrItem?.id || '';
+    if (!sourceHint?.path && moduleId) {
+      sourceHint = sidebarProvider.resolveSourceHint(moduleId);
+    }
+    if (!sourceHint?.path) {
+      vscode.window.showWarningMessage('ArchSync: no source location for selected module.');
+      return;
+    }
+    moduleId = sourceHint.moduleId || moduleId;
     await revealSourceLocation(sourceHint);
+    if (moduleId) {
+      await graphProvider.focusModule(moduleId, { ensureOpen: true });
+    }
   });
 
   register(context, 'archsync.focusSidebar', async () => {
@@ -852,9 +893,17 @@ function activate(context) {
     await vscode.commands.executeCommand('archsync.refreshSidebar');
   });
 
+  register(context, 'archsync.openGraphPane', async () => {
+    await withManager(async () => {
+      await graphProvider.ensurePanel();
+      await graphProvider.highlightByEditor(vscode.window.activeTextEditor);
+      await graphProvider.render();
+      return true;
+    }, [sidebarProvider, graphProvider]);
+  });
+
   register(context, 'archsync.focusGraph', async () => {
-    await vscode.commands.executeCommand(ARCHSYNC_VIEW_CONTAINER_CMD);
-    await graphProvider.render();
+    await vscode.commands.executeCommand('archsync.openGraphPane');
   });
 
   register(context, 'archsync.rebuildSidebar', async () => {
@@ -870,6 +919,8 @@ function activate(context) {
           await serviceManager.buildModel();
           sidebarProvider.refresh();
           graphProvider.refresh();
+          await graphProvider.ensurePanel();
+          await graphProvider.render();
         },
       );
       vscode.window.showInformationMessage('ArchSync: sidebar and graph updated.');
@@ -892,6 +943,8 @@ function activate(context) {
           await vscode.window.showTextDocument(doc, { preview: false });
           sidebarProvider.refresh();
           graphProvider.refresh();
+          await graphProvider.ensurePanel();
+          await graphProvider.render();
         },
       );
       vscode.window.showInformationMessage('ArchSync: build completed.');
@@ -991,6 +1044,7 @@ function activate(context) {
       if (manager) {
         manager.stopAll().catch(() => {});
       }
+      graphProvider.dispose();
       if (revealDecoration) {
         revealDecoration.dispose();
         revealDecoration = undefined;
