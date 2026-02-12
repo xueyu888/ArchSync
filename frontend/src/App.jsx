@@ -254,27 +254,12 @@ function formatEdgeLabel(rawEdge) {
   }
   return readable;
 }
-function ensureSet(items) {
-  if (items instanceof Set) {
-    return items;
-  }
-  return new Set(items || []);
-}
-function hasChildrenInLookup(moduleId, childrenByParent) {
-  return (childrenByParent[moduleId] || []).length > 0;
-}
+function ensureSet(items) { return items instanceof Set ? items : new Set(items || []); }
+function hasChildrenInLookup(moduleId, childrenByParent) { return (childrenByParent[moduleId] || []).length > 0; }
 function setsEqual(left, right) {
-  if (left === right) {
-    return true;
-  }
-  if (!left || !right || left.size !== right.size) {
-    return false;
-  }
-  for (const item of left) {
-    if (!right.has(item)) {
-      return false;
-    }
-  }
+  if (left === right) return true;
+  if (!left || !right || left.size !== right.size) return false;
+  for (const item of left) if (!right.has(item)) return false;
   return true;
 }
 function withFocusPathExpanded(expandedModuleIds, focusModuleId, childrenByParent, moduleById, rootModuleId, options = {}) {
@@ -344,7 +329,7 @@ function collectSemanticViewGraph(model, focusModuleId, childrenByParent, module
   const focusPathIds = focusPath.map((item) => item.id);
   const focusPathIdSet = new Set(focusPathIds);
   const rootId = focusPath[0]?.id || focusModuleId;
-  const visibleIds = new Set();
+  let visibleIds = new Set();
   for (const child of childrenByParent[focusModuleId] || []) {
     visibleIds.add(child.id);
   }
@@ -356,16 +341,28 @@ function collectSemanticViewGraph(model, focusModuleId, childrenByParent, module
   while (changed && pass < 8) {
     changed = false;
     pass += 1;
-    for (const moduleId of expandedSet) {
-      if (!visibleIds.has(moduleId)) {
+    const nextVisible = new Set(visibleIds);
+    for (const moduleId of Array.from(visibleIds)) {
+      if (!expandedSet.has(moduleId)) {
         continue;
       }
-      for (const child of childrenByParent[moduleId] || []) {
-        if (!visibleIds.has(child.id)) {
-          visibleIds.add(child.id);
-          changed = true;
+      const childModules = childrenByParent[moduleId] || [];
+      if (!childModules.length) {
+        continue;
+      }
+      let appended = false;
+      for (const child of childModules) {
+        if (!nextVisible.has(child.id)) {
+          nextVisible.add(child.id);
+          appended = true;
         }
       }
+      if (nextVisible.delete(moduleId) || appended) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      visibleIds = nextVisible;
     }
   }
   const nodes = Array.from(visibleIds)
