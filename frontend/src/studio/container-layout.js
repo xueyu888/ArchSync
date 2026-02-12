@@ -25,10 +25,12 @@ export function buildExpandedContainerDefs(
   for (const moduleId of expandedModuleIds || []) includeLineage(moduleId);
   if (selectedModuleId) includeLineage(selectedModuleId);
   if (!candidateIds.size && focusPathIds?.length) includeLineage(focusPathIds[focusPathIds.length - 1]);
-  const candidates = Array.from(candidateIds)
+  const rawCandidates = Array.from(candidateIds)
     .map((moduleId) => moduleById[moduleId] || visibleById[moduleId])
     .filter(Boolean)
     .sort((a, b) => a.level - b.level || `${a.layer}:${a.name}`.localeCompare(`${b.layer}:${b.name}`));
+  // Layer root nodes are already represented by the lane background.
+  const candidates = rawCandidates.filter((item) => !String(item.id).startsWith("layer:"));
   const candidateIdSet = new Set(candidates.map((item) => item.id));
   const ancestryByNodeId = {};
   for (const node of visibleNodes) {
@@ -80,12 +82,11 @@ export function buildExpandedContainerDefs(
   return defs;
 }
 
-export function materializeExpandedContainers(containerDefs, nodeById, lanes = []) {
+export function materializeExpandedContainers(containerDefs, nodeById) {
   const defs = containerDefs || [];
   if (!defs.length) {
     return [];
   }
-  const laneByLayer = Object.fromEntries((lanes || []).map((lane) => [lane.layer, lane]));
   const defById = Object.fromEntries(defs.map((def) => [def.id, def]));
   const childrenByParent = {};
   for (const def of defs) {
@@ -102,11 +103,16 @@ export function materializeExpandedContainers(containerDefs, nodeById, lanes = [
     .map((def) => def.id);
   const maxLevel = Math.max(...defs.map((def) => Number(def.level) || 0));
   const boxesById = {};
-  function expandToContain(base, target, margin = 8) {
-    const minX = Math.min(base.x, target.x - margin);
-    const minY = Math.min(base.y, target.y - margin);
-    const maxX = Math.max(base.x + base.width, target.x + target.width + margin);
-    const maxY = Math.max(base.y + base.height, target.y + target.height + margin);
+  function expandToContain(base, target, margins = 8) {
+    const margin = typeof margins === "number" ? margins : 8;
+    const marginTop = typeof margins === "object" ? (Number(margins.top) || 0) : margin;
+    const marginRight = typeof margins === "object" ? (Number(margins.right) || 0) : margin;
+    const marginBottom = typeof margins === "object" ? (Number(margins.bottom) || 0) : margin;
+    const marginLeft = typeof margins === "object" ? (Number(margins.left) || 0) : margin;
+    const minX = Math.min(base.x, target.x - marginLeft);
+    const minY = Math.min(base.y, target.y - marginTop);
+    const maxX = Math.max(base.x + base.width, target.x + target.width + marginRight);
+    const maxY = Math.max(base.y + base.height, target.y + target.height + marginBottom);
     return {
       ...base,
       x: minX,
@@ -140,8 +146,6 @@ export function materializeExpandedContainers(containerDefs, nodeById, lanes = [
     const padX = 18 + Math.min(56, depthPad * 9);
     const padTop = 26 + Math.min(52, depthPad * 8);
     const padBottom = 18 + Math.min(34, depthPad * 6);
-    const lane = laneByLayer[def.layer];
-    const laneTopMin = lane ? lane.y + 44 : 8;
     let box = {
       id: def.id,
       name: def.name,
@@ -149,13 +153,15 @@ export function materializeExpandedContainers(containerDefs, nodeById, lanes = [
       level: def.level,
       parentId: def.parentId || "",
       x: Math.max(8, minX - padX),
-      y: Math.max(laneTopMin, minY - padTop),
+      y: Math.max(8, minY - padTop),
       width: Math.max(220, maxX - minX + padX * 2),
       height: Math.max(160, maxY - minY + padTop + padBottom),
       memberCount: members.length,
     };
+    // In Vivado-style nesting, parent frames should be visibly inset from children so the title bars do not overlap.
+    const childInset = { top: 26, left: 18, right: 10, bottom: 10 };
     for (const child of childBoxes) {
-      box = expandToContain(box, child, 10);
+      box = expandToContain(box, child, childInset);
     }
     boxesById[defId] = box;
     return box;
@@ -166,17 +172,5 @@ export function materializeExpandedContainers(containerDefs, nodeById, lanes = [
   const containers = Object.values(boxesById).sort((a, b) => (
     a.level - b.level || (b.width * b.height) - (a.width * a.height)
   ));
-  let previousLabelY = Number.NEGATIVE_INFINITY;
-  const labelsOrdered = [...containers].sort((a, b) => (
-    a.y - b.y
-    || a.level - b.level
-    || a.x - b.x
-  ));
-  for (const container of labelsOrdered) {
-    const targetY = container.y + 24;
-    container.labelX = 12;
-    container.labelY = Math.max(targetY, previousLabelY + 22);
-    previousLabelY = container.labelY;
-  }
   return containers;
 }

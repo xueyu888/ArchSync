@@ -540,6 +540,36 @@ export function boundsWithPadding(layout, nodes, lanes, moduleContainers) {
     height: Math.max(layout.height, maxY + 140),
   };
 }
+
+function expandLanesToContain(lanes, moduleContainers) {
+  if (!lanes?.length || !moduleContainers?.length) {
+    return lanes || [];
+  }
+  const containersByLayer = {};
+  for (const container of moduleContainers) {
+    if (!container?.layer) continue;
+    if (!containersByLayer[container.layer]) containersByLayer[container.layer] = [];
+    containersByLayer[container.layer].push(container);
+  }
+  const pad = 16;
+  return (lanes || []).map((lane) => {
+    const containers = containersByLayer[lane.layer] || [];
+    if (!containers.length) {
+      return lane;
+    }
+    const minX = Math.min(lane.x, ...containers.map((c) => c.x - pad));
+    const minY = Math.min(lane.y, ...containers.map((c) => c.y - pad));
+    const maxX = Math.max(lane.x + lane.width, ...containers.map((c) => c.x + c.width + pad));
+    const maxY = Math.max(lane.y + lane.height, ...containers.map((c) => c.y + c.height + pad));
+    return {
+      ...lane,
+      x: Math.max(8, minX),
+      y: Math.max(8, minY),
+      width: Math.max(lane.width, maxX - Math.max(8, minX)),
+      height: Math.max(lane.height, maxY - Math.max(8, minY)),
+    };
+  });
+}
 export function layoutGraph(
   nodes,
   edges,
@@ -785,17 +815,18 @@ export function layoutGraph(
     selectedModuleId,
   );
   const nodeById = Object.fromEntries(drawNodes.map((item) => [item.id, item]));
-  const moduleContainers = materializeExpandedContainers(containerDefs, nodeById, lanes);
+  const moduleContainers = materializeExpandedContainers(containerDefs, nodeById);
+  const expandedLanes = expandLanesToContain(lanes, moduleContainers);
   const sized = boundsWithPadding(
     { width, height: maxHeight },
     drawNodes,
-    lanes,
+    expandedLanes,
     moduleContainers,
   );
   return {
     width: sized.width,
     height: sized.height,
-    lanes,
+    lanes: expandedLanes,
     containerDefs,
     moduleContainers,
     nodes: drawNodes,
@@ -844,12 +875,13 @@ export function applyManualLayout(layout, manualPositions) {
     };
   });
   const nodeById = Object.fromEntries(nodes.map((item) => [item.id, item]));
-  const moduleContainers = materializeExpandedContainers(layout.containerDefs || [], nodeById, lanes);
-  const sized = boundsWithPadding(layout, nodes, lanes, moduleContainers);
+  const moduleContainers = materializeExpandedContainers(layout.containerDefs || [], nodeById);
+  const expandedLanes = expandLanesToContain(lanes, moduleContainers);
+  const sized = boundsWithPadding(layout, nodes, expandedLanes, moduleContainers);
   return {
     ...layout,
     nodes,
-    lanes,
+    lanes: expandedLanes,
     moduleContainers,
     width: sized.width,
     height: sized.height,

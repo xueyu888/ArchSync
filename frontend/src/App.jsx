@@ -1551,23 +1551,12 @@ function App() {
                   ))}
                   {(renderLayout.moduleContainers || []).map((container) => {
                     const focused = container.id === currentParentId;
-                    const rawTitle = `${moduleById[container.id]?.name || container.name || container.id} · L${container.level}`;
-                    const title = studio.clipByUnits(rawTitle, 20);
-                    const canToggle = container.id !== currentParentId && hasChildren(container.id);
-                    const isExpanded = expandedModuleIds.has(container.id);
-                    const chipWidth = Math.max(86, studio.textUnits(title) * 7 + (canToggle ? 32 : 16));
-                    const chipX = container.labelX ?? 12;
-                    const chipY = container.labelY || (container.y + 9);
-                    const chipHeight = 18;
-                    const toggleX = chipX + chipWidth - 18;
-                    const toggleY = chipY + 2;
-                    const anchorY = chipY + chipHeight / 2;
                     return (
                       <g
-                        key={`container-${container.id}`}
+                        key={`container-body-${container.id}`}
                         data-id={container.id}
                         data-parent-id={container.parentId || ""}
-                        className={`module-container ${focused ? "focused" : ""}`}
+                        className={`module-container module-container-body-layer ${focused ? "focused" : ""}`}
                       >
                         <rect
                           x={container.x}
@@ -1577,31 +1566,6 @@ function App() {
                           rx="16"
                           className="module-container-body"
                         />
-                        <line
-                          x1={chipX + chipWidth}
-                          y1={anchorY}
-                          x2={container.x + 10}
-                          y2={anchorY}
-                          className="module-container-link"
-                        />
-                        <rect x={chipX} y={chipY} width={chipWidth} height={chipHeight} rx="9" className="module-container-chip" />
-                        <text x={chipX + 8} y={chipY + 13} textAnchor="start" className="module-container-title">
-                          {title}
-                        </text>
-                        {canToggle && (
-                          <g
-                            className="module-container-toggle"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleModuleExpand(container.id);
-                            }}
-                          >
-                            <rect x={toggleX} y={toggleY} width="14" height="14" rx="7" className="module-container-toggle-bg" />
-                            <text x={toggleX + 7} y={toggleY + 10} textAnchor="middle" className="module-container-toggle-text">
-                              {isExpanded ? "-" : "+"}
-                            </text>
-                          </g>
-                        )}
                       </g>
                     );
                   })}
@@ -1752,6 +1716,64 @@ function App() {
                   </g>
                 );
               })}
+                  {(renderLayout.moduleContainers || []).map((container) => {
+                    const focused = container.id === currentParentId;
+                    const canToggle = container.id !== currentParentId && hasChildren(container.id);
+                    const isExpanded = expandedModuleIds.has(container.id);
+                    const rawTitle = `${moduleById[container.id]?.name || container.name || container.id} · L${container.level}`;
+                    const maxTitleUnits = Math.max(12, Math.floor((container.width - (canToggle ? 64 : 36)) / 7));
+                    const title = studio.clipByUnits(rawTitle, maxTitleUnits);
+                    const minHeaderWidth = 110;
+                    const maxHeaderWidth = Math.max(minHeaderWidth, container.width - 24);
+                    const headerWidth = Math.min(
+                      maxHeaderWidth,
+                      Math.max(minHeaderWidth, studio.textUnits(title) * 7 + (canToggle ? 40 : 18)),
+                    );
+                    const headerX = container.x + 12;
+                    const headerY = container.y + 10;
+                    const headerHeight = 20;
+                    const toggleX = headerX + headerWidth - 18;
+                    const toggleY = headerY + 3;
+                    return (
+                      <g
+                        key={`container-header-${container.id}`}
+                        data-id={container.id}
+                        data-parent-id={container.parentId || ""}
+                        className={`module-container module-container-header-layer ${focused ? "focused" : ""}`}
+                      >
+                        <rect
+                          x={headerX}
+                          y={headerY}
+                          width={headerWidth}
+                          height={headerHeight}
+                          rx="10"
+                          className="module-container-header-bg"
+                        />
+                        <text
+                          x={headerX + 10}
+                          y={headerY + 14}
+                          textAnchor="start"
+                          className="module-container-header-title"
+                        >
+                          {title}
+                        </text>
+                        {canToggle && (
+                          <g
+                            className="module-container-toggle"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleModuleExpand(container.id);
+                            }}
+                          >
+                            <rect x={toggleX} y={toggleY} width="14" height="14" rx="7" className="module-container-toggle-bg" />
+                            <text x={toggleX + 7} y={toggleY + 10} textAnchor="middle" className="module-container-toggle-text">
+                              {isExpanded ? "-" : "+"}
+                            </text>
+                          </g>
+                        )}
+                      </g>
+                    );
+                  })}
                   {renderLayout.nodes.map((node) => {
                   const isActive = node.id === selectedModuleId;
                   const canExpand = hasChildren(node.id);

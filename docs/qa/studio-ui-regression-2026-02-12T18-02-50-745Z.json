@@ -1,0 +1,25 @@
+{
+  "studioUrl": "http://127.0.0.1:5173/",
+  "startedAt": "2026-02-12T18:02:50.796Z",
+  "screenshots": {
+    "hierarchy": "docs/qa/studio-ui-regression-2026-02-12T18-02-50-745Z-hierarchy.png",
+    "stress": "docs/qa/studio-ui-regression-2026-02-12T18-02-50-745Z-stress.png"
+  },
+  "metrics": {
+    "containerCount": 9,
+    "headerCount": 9,
+    "distinctHeaderXs": [
+      4,
+      22,
+      67,
+      103,
+      130,
+      507
+    ],
+    "headerInsideViolations": [],
+    "containmentViolations": [],
+    "headerOverlapPairs": []
+  },
+  "failures": [],
+  "finishedAt": "2026-02-12T18:03:06.839Z"
+}
