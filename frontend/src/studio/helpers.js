@@ -514,68 +514,103 @@ export function buildCenterOutOrder(count) {
   return Array.from({ length: count }, (_, index) => index)
     .sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle) || a - b);
 }
-export function buildExpandedContainerDefs(nodes, focusPathIds, moduleById = {}) {
-  const visibleById = Object.fromEntries((nodes || []).map((item) => [item.id, item]));
-  const path = (focusPathIds || [])
-    .map((moduleId) => moduleById[moduleId] || visibleById[moduleId])
-    .filter(Boolean);
-  if (!path.length) {
+export function buildExpandedContainerDefs(nodes, focusPathIds, moduleById = {}, expandedModuleIds = [], selectedModuleId = "") {
+  const visibleNodes = nodes || [];
+  const visibleById = Object.fromEntries(visibleNodes.map((item) => [item.id, item]));
+  if (!visibleNodes.length) {
     return [];
   }
-  const scopeParentId = path[path.length - 1].id;
-  const scopeChildIds = (nodes || [])
-    .filter((item) => item.parent_id === scopeParentId)
-    .map((item) => item.id);
-  const fallbackScopeIds = scopeChildIds.length
-    ? scopeChildIds
-    : (visibleById[scopeParentId] ? [scopeParentId] : []);
+  const candidateIds = new Set();
+  function includeLineage(moduleId) {
+    let current = moduleById[moduleId] || visibleById[moduleId] || null;
+    while (current) {
+      candidateIds.add(current.id);
+      if (!current.parent_id) {
+        break;
+      }
+      current = moduleById[current.parent_id] || null;
+    }
+  }
+  for (const moduleId of focusPathIds || []) {
+    includeLineage(moduleId);
+  }
+  for (const moduleId of expandedModuleIds || []) {
+    includeLineage(moduleId);
+  }
+  if (selectedModuleId) {
+    includeLineage(selectedModuleId);
+  }
+  const ancestryByNodeId = {};
+  for (const node of visibleNodes) {
+    const chain = new Set();
+    let current = moduleById[node.id] || node;
+    while (current) {
+      chain.add(current.id);
+      if (!current.parent_id) {
+        break;
+      }
+      current = moduleById[current.parent_id] || null;
+    }
+    ancestryByNodeId[node.id] = chain;
+  }
+  const fallbackFocusId = focusPathIds?.length ? focusPathIds[focusPathIds.length - 1] : "";
   const defs = [];
-  for (let index = 0; index < path.length; index += 1) {
-    const node = path[index];
-    const depthFromInner = path.length - 1 - index;
+  for (const moduleId of candidateIds) {
+    const node = moduleById[moduleId] || visibleById[moduleId];
+    if (!node) {
+      continue;
+    }
+    let memberIds = visibleNodes
+      .filter((item) => item.id !== moduleId && ancestryByNodeId[item.id]?.has(moduleId))
+      .map((item) => item.id);
+    const directVisibleChildren = visibleNodes
+      .filter((item) => item.parent_id === moduleId)
+      .map((item) => item.id);
+    if (!memberIds.length && directVisibleChildren.length) {
+      memberIds = directVisibleChildren;
+    }
+    if (!memberIds.length && moduleId === fallbackFocusId && visibleById[moduleId]) {
+      memberIds = [moduleId];
+    }
+    if (!memberIds.length) {
+      continue;
+    }
     defs.push({
       id: node.id,
       name: node.name,
       layer: node.layer,
       level: node.level,
-      memberIds: depthFromInner === 0 ? fallbackScopeIds : [],
-      depthFromInner,
+      memberIds,
     });
   }
-  return defs;
+  return defs.sort((a, b) => (
+    a.level - b.level
+    || `${a.layer}:${a.name}`.localeCompare(`${b.layer}:${b.name}`)
+  ));
 }
 export function materializeExpandedContainers(containerDefs, nodeById, lanes = []) {
   const laneByLayer = Object.fromEntries((lanes || []).map((lane) => [lane.layer, lane]));
+  const defs = containerDefs || [];
+  if (!defs.length) {
+    return [];
+  }
+  const maxLevel = Math.max(...defs.map((def) => Number(def.level) || 0));
   const containers = [];
-  const ordered = [...(containerDefs || [])].sort((a, b) => (
-    (a.depthFromInner || 0) - (b.depthFromInner || 0)
-  ));
-  let previousBounds = null;
-  for (const def of ordered) {
+  for (const def of defs) {
     const members = def.memberIds
       .map((moduleId) => nodeById[moduleId])
       .filter(Boolean);
-    let minX;
-    let maxX;
-    let minY;
-    let maxY;
-    if (members.length) {
-      minX = Math.min(...members.map((item) => item.x));
-      maxX = Math.max(...members.map((item) => item.x + item.width));
-      minY = Math.min(...members.map((item) => item.y));
-      maxY = Math.max(...members.map((item) => item.y + item.height));
-    } else if (previousBounds) {
-      minX = previousBounds.x;
-      maxX = previousBounds.x + previousBounds.width;
-      minY = previousBounds.y;
-      maxY = previousBounds.y + previousBounds.height;
-    } else {
+    if (!members.length) {
       continue;
     }
-    const depthPad = Math.max(0, Number(def.depthFromInner || 0));
-    const padX = 24 + Math.min(56, depthPad * 14);
-    const padTop = 34 + Math.min(64, depthPad * 14);
-    const padBottom = 20 + Math.min(40, depthPad * 10);
+    const minX = Math.min(...members.map((item) => item.x));
+    const maxX = Math.max(...members.map((item) => item.x + item.width));
+    const minY = Math.min(...members.map((item) => item.y));
+    const maxY = Math.max(...members.map((item) => item.y + item.height));
+    const depthPad = Math.max(0, maxLevel - (Number(def.level) || 0));
+    const padX = 20 + Math.min(48, depthPad * 8);
+    const padTop = 28 + Math.min(42, depthPad * 8);
+    const padBottom = 18 + Math.min(30, depthPad * 6);
     const lane = laneByLayer[def.layer];
     const laneTopMin = lane ? lane.y + 44 : 8;
     const x = Math.max(8, minX - padX);
@@ -594,9 +629,11 @@ export function materializeExpandedContainers(containerDefs, nodeById, lanes = [
       memberCount: members.length,
     };
     containers.push(box);
-    previousBounds = box;
   }
-  return containers.reverse();
+  return containers.sort((a, b) => (
+    a.level - b.level
+    || (b.width * b.height) - (a.width * a.height)
+  ));
 }
 export function boundsWithPadding(layout, nodes, lanes, moduleContainers) {
   const candidates = [
@@ -625,6 +662,8 @@ export function layoutGraph(
   summarySourceByModule = {},
   moduleById = {},
   focusPathIds = [],
+  expandedModuleIds = [],
+  selectedModuleId = "",
 ) {
   const groups = new Map();
   for (const node of nodes) {
@@ -852,7 +891,13 @@ export function layoutGraph(
     maxHeight = Math.max(maxHeight, laneHeight + 110);
   }
   const width = Math.max(640, totalWidth - laneGap + 130);
-  const containerDefs = buildExpandedContainerDefs(nodes, focusPathIds, moduleById);
+  const containerDefs = buildExpandedContainerDefs(
+    nodes,
+    focusPathIds,
+    moduleById,
+    expandedModuleIds,
+    selectedModuleId,
+  );
   const nodeById = Object.fromEntries(drawNodes.map((item) => [item.id, item]));
   const moduleContainers = materializeExpandedContainers(containerDefs, nodeById, lanes);
   const sized = boundsWithPadding(

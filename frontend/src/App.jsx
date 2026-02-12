@@ -323,6 +323,8 @@ function App() {
       llmSummarySource,
       moduleById,
       viewGraph.focusPathIds,
+      Array.from(expandedModuleIds),
+      selectedModuleId,
     ),
     [
       scopedNodes,
@@ -332,6 +334,8 @@ function App() {
       llmSummaries,
       llmSummarySource,
       moduleById,
+      expandedModuleIds,
+      selectedModuleId,
     ],
   );
   const manualPositionsForCurrent = useMemo(
