@@ -4,9 +4,7 @@ const vscode = require('vscode');
 const { ArchSyncServiceManager } = require('./runtime');
 const {
   buildChildrenLookup,
-  collectViewGraph,
   findSystemModule,
-  lineage,
 } = require('./model-utils');
 
 let outputChannel;
@@ -255,10 +253,6 @@ function resolveSourceHint(bundle, moduleId) {
   return null;
 }
 
-function hasChildren(bundle, moduleId) {
-  return (bundle?.childrenByParent.get(moduleId) || []).length > 0;
-}
-
 class ArchSyncSidebarProvider {
   constructor(logger) {
     this.logger = logger;
@@ -362,390 +356,6 @@ class ArchSyncSidebarProvider {
   }
 }
 
-class ArchSyncGraphPanelController {
-  constructor(logger) {
-    this.logger = logger;
-    this.root = '';
-    this.bundle = null;
-    this.panel = null;
-    this.currentParentId = '';
-    this.selectedModuleId = '';
-    this.highlightModuleId = '';
-  }
-
-  setRoot(root) {
-    if (this.root === root) {
-      return;
-    }
-    this.root = root;
-    this.bundle = null;
-    this.currentParentId = '';
-    this.selectedModuleId = '';
-    this.highlightModuleId = '';
-    this.render().catch(() => {});
-  }
-
-  refresh() {
-    this.bundle = null;
-    this.render().catch(() => {});
-  }
-
-  async ensurePanel() {
-    if (this.panel) {
-      this.panel.reveal(vscode.ViewColumn.Beside, false);
-      return this.panel;
-    }
-
-    this.panel = vscode.window.createWebviewPanel(
-      'archsyncGraphPanel',
-      'ArchSync Graph',
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: false },
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-      },
-    );
-
-    this.panel.webview.options = {
-      enableScripts: true,
-    };
-
-    const nonce = Math.random().toString(36).slice(2);
-    this.panel.webview.html = this._html(nonce);
-
-    this.panel.webview.onDidReceiveMessage(async (message) => {
-      const type = message?.type;
-      if (type === 'refresh') {
-        this.refresh();
-        return;
-      }
-      if (type === 'up') {
-        await this.drillUp();
-        return;
-      }
-      if (type === 'jump') {
-        await this.jumpTo(message.moduleId);
-        return;
-      }
-      if (type === 'drill') {
-        await this.drillInto(message.moduleId);
-        return;
-      }
-      if (type === 'select') {
-        await this.select(message.moduleId);
-        return;
-      }
-      if (type === 'openModule') {
-        await this.openModule(message.moduleId);
-      }
-    });
-
-    this.panel.onDidDispose(() => {
-      this.panel = null;
-    });
-
-    await this.render();
-    return this.panel;
-  }
-
-  async focusModule(moduleId, options = {}) {
-    if (!moduleId) {
-      return;
-    }
-    if (options.ensureOpen) {
-      await this.ensurePanel();
-    }
-    await this._ensureBundle();
-    if (!this.bundle || !this.bundle.moduleById.has(moduleId)) {
-      return;
-    }
-
-    const module = this.bundle.moduleById.get(moduleId);
-    const children = this.bundle.childrenByParent.get(moduleId) || [];
-
-    if (children.length) {
-      this.currentParentId = moduleId;
-      this.selectedModuleId = children[0]?.id || moduleId;
-    } else {
-      this.currentParentId = module.parent_id || this.bundle.systemModule?.id || moduleId;
-      this.selectedModuleId = moduleId;
-    }
-
-    this.highlightModuleId = moduleId;
-    await this.render();
-  }
-
-  async highlightByEditor(editor) {
-    await this._ensureBundle();
-    if (!this.bundle || !editor?.document) {
-      return;
-    }
-
-    const relativePath = toRelativeModelPath(this.root, editor.document.uri.fsPath);
-    if (!relativePath) {
-      return;
-    }
-
-    const moduleId = this.bundle.pathToModuleId.get(relativePath);
-    if (!moduleId) {
-      return;
-    }
-
-    const module = this.bundle.moduleById.get(moduleId);
-    if (!module) {
-      return;
-    }
-
-    this.highlightModuleId = moduleId;
-    this.selectedModuleId = moduleId;
-    this.currentParentId = module.parent_id || this.bundle.systemModule?.id || this.currentParentId;
-    await this.render();
-  }
-
-  async select(moduleId) {
-    if (!moduleId) {
-      return;
-    }
-    await this._ensureBundle();
-    if (!this.bundle?.moduleById.has(moduleId)) {
-      return;
-    }
-    this.selectedModuleId = moduleId;
-    await this.render();
-  }
-
-  async drillInto(moduleId) {
-    if (!moduleId) {
-      return;
-    }
-    await this._ensureBundle();
-    if (!this.bundle) {
-      return;
-    }
-
-    const children = this.bundle.childrenByParent.get(moduleId) || [];
-    if (children.length) {
-      this.currentParentId = moduleId;
-      this.selectedModuleId = children[0]?.id || moduleId;
-      await this.render();
-      return;
-    }
-
-    await this.openModule(moduleId);
-  }
-
-  async drillUp() {
-    await this._ensureBundle();
-    if (!this.bundle || !this.currentParentId) {
-      return;
-    }
-    const current = this.bundle.moduleById.get(this.currentParentId);
-    if (!current || !current.parent_id) {
-      return;
-    }
-
-    this.selectedModuleId = current.id;
-    this.currentParentId = current.parent_id;
-    await this.render();
-  }
-
-  async jumpTo(moduleId) {
-    await this._ensureBundle();
-    if (!this.bundle?.moduleById.has(moduleId)) {
-      return;
-    }
-    this.currentParentId = moduleId;
-    this.selectedModuleId = moduleId;
-    await this.render();
-  }
-
-  async openModule(moduleId) {
-    await this._ensureBundle();
-    if (!this.bundle) {
-      return;
-    }
-    const sourceHint = resolveSourceHint(this.bundle, moduleId);
-    if (!sourceHint) {
-      return;
-    }
-
-    this.selectedModuleId = moduleId;
-    this.highlightModuleId = sourceHint.moduleId || moduleId;
-    await revealSourceLocation(sourceHint);
-    await this.render();
-  }
-
-  async render() {
-    if (!this.panel) {
-      return;
-    }
-
-    await this._ensureBundle();
-
-    if (!this.bundle || !this.bundle.systemModule) {
-      this.panel.webview.postMessage({ type: 'state', payload: { ready: false } });
-      return;
-    }
-
-    if (!this.currentParentId || !this.bundle.moduleById.has(this.currentParentId)) {
-      this.currentParentId = this.bundle.systemModule.id;
-    }
-
-    const viewGraph = collectViewGraph(
-      this.bundle.model,
-      this.currentParentId,
-      this.bundle.childrenByParent,
-      this.bundle.moduleById,
-    );
-
-    const currentParent = this.bundle.moduleById.get(this.currentParentId);
-    const breadcrumb = lineage(this.currentParentId, this.bundle.moduleById).map((item) => ({
-      id: item.id,
-      name: item.name,
-      level: item.level,
-    }));
-
-    if (!this.selectedModuleId || !this.bundle.moduleById.has(this.selectedModuleId)) {
-      this.selectedModuleId = viewGraph.nodes[0]?.id || this.currentParentId;
-    }
-
-    const nodes = viewGraph.nodes.map((node) => {
-      const summary = this.bundle.summaryById[node.id] || '';
-      const summarySource = this.bundle.summarySourceById[node.id] || 'fallback';
-      return {
-        id: node.id,
-        name: node.name,
-        layer: node.layer,
-        level: node.level,
-        path: node.path,
-        summary,
-        summarySource,
-        canDrill: hasChildren(this.bundle, node.id),
-        hasSource: !!resolveSourceHint(this.bundle, node.id),
-        selected: node.id === this.selectedModuleId,
-        highlighted: node.id === this.highlightModuleId,
-      };
-    });
-
-    const selectedModule = this.bundle.moduleById.get(this.selectedModuleId) || null;
-    const selectedSource = selectedModule ? resolveSourceHint(this.bundle, selectedModule.id) : null;
-
-    const payload = {
-      ready: true,
-      currentParentId: this.currentParentId,
-      currentParentName: currentParent?.name || 'Unknown',
-      currentDepth: currentParent?.level || 0,
-      canUp: !!currentParent?.parent_id,
-      nodes,
-      edges: viewGraph.edges,
-      breadcrumb,
-      selected: selectedModule
-        ? {
-          id: selectedModule.id,
-          name: selectedModule.name,
-          layer: selectedModule.layer,
-          level: selectedModule.level,
-          path: selectedModule.path,
-          summary: this.bundle.summaryById[selectedModule.id] || '',
-          summarySource: this.bundle.summarySourceById[selectedModule.id] || 'fallback',
-          hasSource: !!selectedSource,
-        }
-        : null,
-    };
-
-    this.panel.webview.postMessage({ type: 'state', payload });
-  }
-
-  async _ensureBundle() {
-    if (this.bundle) {
-      return;
-    }
-
-    this.bundle = loadModelBundle(this.root, this.logger);
-    if (!this.bundle || !this.bundle.systemModule) {
-      return;
-    }
-
-    if (!this.currentParentId) {
-      this.currentParentId = this.bundle.systemModule.id;
-    }
-  }
-
-  _html(nonce) {
-    const scriptPath = path.join(__dirname, 'media', 'graph-view.js');
-    const scriptContent = fs.readFileSync(scriptPath, 'utf-8');
-    return `<!doctype html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root {
-      --bg: #f8fbff;
-      --panel: #ffffff;
-      --line: #bfd1e3;
-      --ink: #1c3550;
-      --muted: #55728e;
-      --edge: #4d6783;
-      --edge-intf: #147a66;
-      --sel: #eaf4ff;
-      --hl: #fff2e7;
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: "Segoe UI", "Noto Sans SC", sans-serif; }
-    .root { height: 100%; display: grid; grid-template-rows: auto auto 1fr auto; }
-    .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); background: #fff; }
-    button { border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); padding: 4px 8px; cursor: pointer; }
-    button:hover { border-color: #8eb0d3; }
-    .meta { margin-left: auto; font-size: 11px; color: var(--muted); }
-    .crumbs { display: flex; align-items: center; gap: 4px; overflow: auto; white-space: nowrap; border-bottom: 1px solid var(--line); padding: 6px 8px; background: #fcfeff; }
-    .crumbs .sep { color: #87a0bb; }
-    .canvas { position: relative; overflow: auto; padding: 10px; }
-    .diagram { position: relative; min-height: 360px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-    .diagram svg { position: absolute; inset: 0; pointer-events: none; }
-    .node { position: absolute; width: 220px; border: 2px solid #56789a; border-radius: 12px; background: #fffdf7; padding: 8px; text-align: left; }
-    .node.selected { background: var(--sel); border-color: #2f618f; }
-    .node.highlight { background: var(--hl); border-color: #d66735; }
-    .node h4 { margin: 0; font-size: 13px; }
-    .node p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
-    .node .summary { color: #285f8d; }
-    .node .hint { margin-top: 4px; font-size: 10px; color: #0f6a5b; font-weight: 700; }
-    .lane-label { position: absolute; font-size: 12px; font-weight: 700; color: #3a5a7a; }
-    .empty { padding: 16px; color: var(--muted); font-size: 12px; }
-    .details { border-top: 1px solid var(--line); background: #fff; padding: 8px; font-size: 12px; }
-    .details h4 { margin: 0 0 4px; font-size: 13px; }
-    .details p { margin: 0 0 4px; color: var(--muted); }
-    .source-pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 10px; font-weight: 700; }
-    .source-pill.llm { border-color: #84cfc0; color: #0e6e60; background: #e9f8f4; }
-    .source-pill.fallback { border-color: #9db4cc; color: #4b6177; background: #f0f5fc; }
-  </style>
-</head>
-<body>
-  <div class="root">
-    <div class="toolbar">
-      <button id="refresh">Refresh</button>
-      <button id="up">Up</button>
-      <button id="open-selected">Open Source</button>
-      <span class="meta" id="meta">waiting…</span>
-    </div>
-    <div class="crumbs" id="crumbs"></div>
-    <div class="canvas" id="canvas"><div class="empty">Waiting for model...</div></div>
-    <div class="details" id="details"><p>选择节点查看说明并联动代码</p></div>
-  </div>
-  <script nonce="${nonce}">${scriptContent}</script>
-</body>
-</html>`;
-  }
-
-  dispose() {
-    if (this.panel) {
-      this.panel.dispose();
-      this.panel = null;
-    }
-  }
-}
-
 async function withManager(task, providers = []) {
   const root = getWorkspaceRoot();
   if (!root) {
@@ -826,7 +436,6 @@ function activate(context) {
   context.subscriptions.push(outputChannel);
 
   const sidebarProvider = new ArchSyncSidebarProvider(outputChannel);
-  const graphProvider = new ArchSyncGraphPanelController(outputChannel);
 
   const treeView = vscode.window.createTreeView(MODULES_VIEW_ID, {
     treeDataProvider: sidebarProvider,
@@ -837,21 +446,17 @@ function activate(context) {
   const root = getWorkspaceRoot();
   if (root) {
     sidebarProvider.setRoot(root);
-    graphProvider.setRoot(root);
   }
 
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
     const nextRoot = getWorkspaceRoot();
     sidebarProvider.setRoot(nextRoot);
     sidebarProvider.refresh();
-    graphProvider.setRoot(nextRoot);
-    graphProvider.refresh();
   }));
 
   context.subscriptions.push(treeView.onDidChangeSelection(async (event) => {
     const selected = event.selection?.[0];
     if (selected?.moduleId) {
-      await graphProvider.focusModule(selected.moduleId, { ensureOpen: true });
       const sourceHint = sidebarProvider.resolveSourceHint(selected.moduleId);
       if (sourceHint) {
         await revealSourceLocation(sourceHint);
@@ -859,21 +464,15 @@ function activate(context) {
     }
   }));
 
-  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor((editor) => {
-    graphProvider.highlightByEditor(editor).catch(() => {});
-  }));
-
   register(context, 'archsync.refreshSidebar', async () => {
     const nextRoot = getWorkspaceRoot();
     sidebarProvider.setRoot(nextRoot);
     sidebarProvider.refresh();
-    graphProvider.setRoot(nextRoot);
-    graphProvider.refresh();
   });
 
   register(context, 'archsync.revealModuleSource', async (sourceHintOrItem) => {
     let sourceHint = sourceHintOrItem;
-    let moduleId = sourceHintOrItem?.moduleId || sourceHintOrItem?.id || '';
+    const moduleId = sourceHintOrItem?.moduleId || sourceHintOrItem?.id || '';
     if (!sourceHint?.path && moduleId) {
       sourceHint = sidebarProvider.resolveSourceHint(moduleId);
     }
@@ -881,29 +480,12 @@ function activate(context) {
       vscode.window.showWarningMessage('ArchSync: no source location for selected module.');
       return;
     }
-    moduleId = sourceHint.moduleId || moduleId;
     await revealSourceLocation(sourceHint);
-    if (moduleId) {
-      await graphProvider.focusModule(moduleId, { ensureOpen: true });
-    }
   });
 
   register(context, 'archsync.focusSidebar', async () => {
     await vscode.commands.executeCommand(ARCHSYNC_VIEW_CONTAINER_CMD);
     await vscode.commands.executeCommand('archsync.refreshSidebar');
-  });
-
-  register(context, 'archsync.openGraphPane', async () => {
-    await withManager(async () => {
-      await graphProvider.ensurePanel();
-      await graphProvider.highlightByEditor(vscode.window.activeTextEditor);
-      await graphProvider.render();
-      return true;
-    }, [sidebarProvider, graphProvider]);
-  });
-
-  register(context, 'archsync.focusGraph', async () => {
-    await vscode.commands.executeCommand('archsync.openGraphPane');
   });
 
   register(context, 'archsync.rebuildSidebar', async () => {
@@ -918,14 +500,11 @@ function activate(context) {
         async () => {
           await serviceManager.buildModel();
           sidebarProvider.refresh();
-          graphProvider.refresh();
-          await graphProvider.ensurePanel();
-          await graphProvider.render();
         },
       );
-      vscode.window.showInformationMessage('ArchSync: sidebar and graph updated.');
+      vscode.window.showInformationMessage('ArchSync: sidebar updated.');
       return true;
-    }, [sidebarProvider, graphProvider]);
+    }, [sidebarProvider]);
   });
 
   register(context, 'archsync.buildModel', async () => {
@@ -942,14 +521,11 @@ function activate(context) {
           const doc = await vscode.workspace.openTextDocument(modelPath);
           await vscode.window.showTextDocument(doc, { preview: false });
           sidebarProvider.refresh();
-          graphProvider.refresh();
-          await graphProvider.ensurePanel();
-          await graphProvider.render();
         },
       );
       vscode.window.showInformationMessage('ArchSync: build completed.');
       return true;
-    }, [sidebarProvider, graphProvider]);
+    }, [sidebarProvider]);
   });
 
   register(context, 'archsync.startServices', async () => {
@@ -967,7 +543,7 @@ function activate(context) {
         `ArchSync ready: backend ${info.backendUrl}, frontend ${info.frontendUrl}`,
       );
       return true;
-    }, [sidebarProvider, graphProvider]);
+    }, [sidebarProvider]);
   });
 
   register(context, 'archsync.stopServices', async () => {
@@ -975,7 +551,7 @@ function activate(context) {
       await serviceManager.stopAll();
       vscode.window.showInformationMessage('ArchSync: services stopped.');
       return true;
-    }, [sidebarProvider, graphProvider]);
+    }, [sidebarProvider]);
   });
 
   register(context, 'archsync.openModelJson', async () => {
@@ -989,7 +565,7 @@ function activate(context) {
         vscode.window.showWarningMessage('ArchSync: model file not found, run "Build Architecture Model" first.');
       }
       return true;
-    }, [sidebarProvider, graphProvider]);
+    }, [sidebarProvider]);
   });
 
   register(context, 'archsync.openStudio', async () => {
@@ -1034,17 +610,14 @@ function activate(context) {
       });
 
       return true;
-    }, [sidebarProvider, graphProvider]);
+    }, [sidebarProvider]);
   });
-
-  graphProvider.highlightByEditor(vscode.window.activeTextEditor).catch(() => {});
 
   context.subscriptions.push({
     dispose: () => {
       if (manager) {
         manager.stopAll().catch(() => {});
       }
-      graphProvider.dispose();
       if (revealDecoration) {
         revealDecoration.dispose();
         revealDecoration = undefined;

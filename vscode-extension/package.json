@@ -18,7 +18,6 @@
   "activationEvents": [
     "onView:archsyncModulesView",
     "onCommand:archsync.openStudio",
-    "onCommand:archsync.openGraphPane",
     "onCommand:archsync.startServices",
     "onCommand:archsync.stopServices",
     "onCommand:archsync.buildModel",
@@ -26,19 +25,18 @@
     "onCommand:archsync.refreshSidebar",
     "onCommand:archsync.rebuildSidebar",
     "onCommand:archsync.revealModuleSource",
-    "onCommand:archsync.focusSidebar",
-    "onCommand:archsync.focusGraph"
+    "onCommand:archsync.focusSidebar"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
         "command": "archsync.openStudio",
-        "title": "ArchSync: Open Studio"
-      },
-      {
-        "command": "archsync.openGraphPane",
-        "title": "ArchSync: Open Graph Pane"
+        "title": "ArchSync: Open Studio",
+        "icon": {
+          "light": "media/archsync.svg",
+          "dark": "media/archsync.svg"
+        }
       },
       {
         "command": "archsync.startServices",
@@ -71,10 +69,6 @@
       {
         "command": "archsync.focusSidebar",
         "title": "ArchSync: Focus Sidebar"
-      },
-      {
-        "command": "archsync.focusGraph",
-        "title": "ArchSync: Focus Graph"
       }
     ],
     "views": {
@@ -103,24 +97,19 @@
     "menus": {
       "view/title": [
         {
-          "command": "archsync.refreshSidebar",
+          "command": "archsync.openStudio",
           "when": "view == archsyncModulesView",
           "group": "navigation@1"
         },
         {
+          "command": "archsync.refreshSidebar",
+          "when": "view == archsyncModulesView",
+          "group": "archsyncActions@1"
+        },
+        {
           "command": "archsync.rebuildSidebar",
           "when": "view == archsyncModulesView",
-          "group": "navigation@2"
-        },
-        {
-          "command": "archsync.openStudio",
-          "when": "view == archsyncModulesView",
-          "group": "navigation@3"
-        },
-        {
-          "command": "archsync.openGraphPane",
-          "when": "view == archsyncModulesView",
-          "group": "navigation@4"
+          "group": "archsyncActions@2"
         }
       ],
       "view/item/context": [
