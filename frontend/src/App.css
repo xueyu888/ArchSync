@@ -43,6 +43,11 @@ body {
   grid-template-columns: 1fr;
 }
 
+.studio.focus-mode {
+  padding: 8px;
+  gap: 8px;
+}
+
 .studio-sidebar {
   border: 2px solid var(--line);
   border-radius: 16px;
@@ -123,6 +128,13 @@ button:hover:not(:disabled) {
 button:disabled {
   opacity: 0.58;
   cursor: not-allowed;
+}
+
+button.active-focus-toggle {
+  border-color: #1e6f66;
+  background: #eaf8f5;
+  color: #0f5f52;
+  font-weight: 700;
 }
 
 .metrics {
@@ -363,6 +375,62 @@ button:disabled {
   background: #f8fbff;
 }
 
+.edge-density-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px 8px;
+  background: #fffaf0;
+}
+
+.edge-density-control label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.edge-density-control input[type="range"] {
+  width: 104px;
+  accent-color: #2f6fa5;
+}
+
+.edge-density-control span {
+  min-width: 30px;
+  text-align: right;
+  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #274664;
+}
+
+.edge-scope-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fbfbf8;
+}
+
+.edge-scope-toggle button {
+  border: 0;
+  border-radius: 0;
+  padding: 6px 10px;
+  background: transparent;
+  font-size: 12px;
+}
+
+.edge-scope-toggle button + button {
+  border-left: 1px solid var(--line);
+}
+
+.edge-scope-toggle button.active {
+  background: #d5ebf5;
+  color: #184f77;
+  font-weight: 700;
+}
+
 .legend-item {
   padding: 4px 8px;
   border-radius: 999px;
@@ -472,11 +540,27 @@ button:disabled {
   border-top: 1px solid var(--line);
 }
 
+.workspace-body.no-properties {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .diagram-column {
   min-width: 0;
   border-right: 1px solid var(--line);
   display: grid;
   grid-template-rows: auto 1fr;
+}
+
+.workspace-body.no-properties .diagram-column {
+  border-right: 0;
+}
+
+.diagram-column.focus-canvas {
+  grid-template-rows: 1fr;
+}
+
+.diagram-column.focus-canvas .canvas-wrap {
+  padding: 8px;
 }
 
 .properties-panel {
@@ -739,6 +823,41 @@ button:disabled {
   font-weight: 700;
 }
 
+.module-container {
+  pointer-events: none;
+}
+
+.module-container .module-container-body {
+  fill: rgba(209, 225, 243, 0.2);
+  stroke: rgba(86, 120, 154, 0.48);
+  stroke-width: 1.2;
+  stroke-dasharray: 7 5;
+}
+
+.module-container.focused .module-container-body {
+  fill: rgba(248, 226, 206, 0.3);
+  stroke: rgba(216, 101, 53, 0.72);
+  stroke-width: 1.6;
+}
+
+.module-container .module-container-title {
+  fill: #2a4f73;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
+}
+
+.module-container.focused .module-container-title {
+  fill: #8f4d2d;
+}
+
+.module-container .module-container-meta {
+  fill: #5b7189;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+}
+
 .edge {
   fill: none;
   opacity: 0.84;
@@ -777,6 +896,7 @@ button:disabled {
 
 .edge-interface {
   stroke: #2f6fa5;
+  filter: drop-shadow(0 0 1px rgba(42, 106, 158, 0.35));
 }
 
 .edge-dependency_file {
@@ -838,6 +958,30 @@ button:disabled {
   stroke: #4d5562;
 }
 
+.edge-terminal {
+  pointer-events: none;
+}
+
+.edge-terminal .terminal-body {
+  fill: #d8e9f7;
+  stroke: #2f6fa5;
+  stroke-width: 1.2;
+}
+
+.edge-terminal .terminal-bar {
+  stroke: #2f6fa5;
+  stroke-width: 1;
+}
+
+.edge-terminal.selected .terminal-body {
+  fill: #c7e3fa;
+  stroke-width: 1.6;
+}
+
+.edge-terminal.dimmed {
+  opacity: 0.2;
+}
+
 .no-edge-note {
   fill: #6a7786;
   font-size: 12px;
@@ -854,6 +998,48 @@ button:disabled {
 
 .node.dimmed {
   opacity: 0.28;
+}
+
+.node.context-focus .node-body,
+.node.focused .node-body {
+  stroke: #d86535;
+  stroke-width: 2.5;
+  fill: #fff4ea;
+}
+
+.node.context-focus .node-header,
+.node.focused .node-header {
+  fill: #ffd9be;
+  stroke: #db8b56;
+}
+
+.node.context-path:not(.focused) .node-body {
+  stroke: #2b5d89;
+  stroke-width: 2;
+  fill: #f8fbff;
+}
+
+.node.context-expanded .node-body {
+  stroke: #2e7f71;
+  fill: #f2fbf8;
+}
+
+.node.context-sibling .node-body {
+  fill: #f8fafc;
+}
+
+.node.context-context .node-body {
+  stroke: #8da8c1;
+  fill: #f6f9fc;
+  fill-opacity: 0.9;
+}
+
+.node.context-context .title,
+.node.context-context .meta,
+.node.context-context .summary-line,
+.node.context-context .port,
+.node.context-context .summary-tag {
+  opacity: 0.78;
 }
 
 .node.neighbor .node-body {
@@ -903,6 +1089,62 @@ button:disabled {
   filter: drop-shadow(3px 5px 7px rgba(20, 62, 96, 0.25));
 }
 
+.node-expand-toggle {
+  cursor: pointer;
+}
+
+.node-expand-toggle .expand-toggle-bg {
+  fill: #eef4fb;
+  stroke: #7f9fc0;
+  stroke-width: 1;
+}
+
+.node-expand-toggle .expand-toggle-text {
+  fill: #2a4b6b;
+  font-size: 11px;
+  font-weight: 700;
+  pointer-events: none;
+  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+}
+
+.node-expand-toggle.expanded .expand-toggle-bg {
+  fill: #e8f7f3;
+  stroke: #58a493;
+}
+
+.node-agg-badge {
+  cursor: pointer;
+}
+
+.node-agg-badge .agg-bg {
+  stroke-width: 1;
+}
+
+.node-agg-badge .agg-text {
+  font-size: 9px;
+  font-weight: 700;
+  pointer-events: none;
+  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+}
+
+.node-agg-badge.in .agg-bg {
+  fill: #eaf4ff;
+  stroke: #7da4cc;
+}
+
+.node-agg-badge.in .agg-text {
+  fill: #1f5c90;
+}
+
+.node-agg-badge.out .agg-bg {
+  fill: #fff0e1;
+  stroke: #c1935d;
+}
+
+.node-agg-badge.out .agg-text {
+  fill: #8e5a22;
+}
+
 .node .pin-line {
   stroke-width: 1.7;
 }
@@ -913,6 +1155,10 @@ button:disabled {
 
 .node .pin-line.out {
   stroke: #8a5d26;
+}
+
+.node .pin-line.bus {
+  stroke-width: 2.4;
 }
 
 .node .pin-line.active,
@@ -947,6 +1193,23 @@ button:disabled {
 .node .pin-dot.out {
   fill: #f1dec9;
   stroke: #8a5d26;
+}
+
+.node .pin-dot.bus {
+  fill: #d7eaf8;
+  stroke: #2f6fa5;
+  stroke-width: 1.1;
+}
+
+.node .pin-bus-mark {
+  stroke: #2f6fa5;
+  stroke-width: 1;
+  opacity: 0.78;
+}
+
+.node .pin-bus-mark.active,
+.node .pin-bus-mark.candidate {
+  opacity: 1;
 }
 
 .node .title {
@@ -999,9 +1262,17 @@ button:disabled {
   fill: #a9601f;
 }
 
+.node .in-port.bus {
+  fill: #1f5c90;
+}
+
+.node .out-port.bus {
+  fill: #2f6fa5;
+}
+
 .drill-hint {
-  fill: #0e5c4f;
-  font-size: 10px;
+  fill: #2b5d89;
+  font-size: 9px;
   font-weight: 700;
 }
 
