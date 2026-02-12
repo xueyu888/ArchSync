@@ -345,45 +345,42 @@ function collectSemanticViewGraph(model, focusModuleId, childrenByParent, module
   const focusPathIdSet = new Set(focusPathIds);
   const rootId = focusPath[0]?.id || focusModuleId;
   const visibleIds = new Set();
-  const contextParentIds = new Set();
-  contextParentIds.add(rootId);
-  for (let index = 1; index < focusPath.length; index += 1) {
-    const parentId = focusPath[index].parent_id;
-    if (parentId) {
-      contextParentIds.add(parentId);
+  for (const child of childrenByParent[focusModuleId] || []) {
+    visibleIds.add(child.id);
+  }
+  if (!visibleIds.size) {
+    visibleIds.add(focusModuleId);
+  }
+  let changed = true;
+  let pass = 0;
+  while (changed && pass < 8) {
+    changed = false;
+    pass += 1;
+    for (const moduleId of expandedSet) {
+      if (!visibleIds.has(moduleId)) {
+        continue;
+      }
+      for (const child of childrenByParent[moduleId] || []) {
+        if (!visibleIds.has(child.id)) {
+          visibleIds.add(child.id);
+          changed = true;
+        }
+      }
     }
   }
-  for (const parentId of contextParentIds) {
-    for (const child of childrenByParent[parentId] || []) {
-      visibleIds.add(child.id);
-    }
-  }
-  for (const moduleId of expandedSet) {
-    if (!moduleById[moduleId]) {
-      continue;
-    }
-    for (const child of childrenByParent[moduleId] || []) {
-      visibleIds.add(child.id);
-    }
-  }
-  for (let index = 1; index < focusPath.length; index += 1) {
-    visibleIds.add(focusPath[index].id);
-  }
-  visibleIds.add(focusModuleId);
   const nodes = Array.from(visibleIds)
     .map((moduleId) => moduleById[moduleId])
     .filter(Boolean)
     .map((module) => {
-      const hasFocusPathParent = !!module.parent_id && focusPathIdSet.has(module.parent_id);
       let contextKind = "context";
       if (module.id === focusModuleId) {
+        contextKind = "focus";
+      } else if (module.parent_id === focusModuleId) {
         contextKind = "focus";
       } else if (focusPathIdSet.has(module.id)) {
         contextKind = "path";
       } else if (expandedSet.has(module.id)) {
         contextKind = "expanded";
-      } else if (hasFocusPathParent) {
-        contextKind = "sibling";
       }
       return {
         ...module,
@@ -508,47 +505,32 @@ function buildCenterOutOrder(count) {
   return Array.from({ length: count }, (_, index) => index)
     .sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle) || a - b);
 }
-function buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds, moduleById = {}) {
+function buildExpandedContainerDefs(nodes, focusPathIds, moduleById = {}) {
   const visibleById = Object.fromEntries((nodes || []).map((item) => [item.id, item]));
-  const expandedSet = ensureSet(expandedModuleIds);
-  const defs = [];
-  const sorted = Array.from(expandedSet)
+  const path = (focusPathIds || [])
     .map((moduleId) => moduleById[moduleId] || visibleById[moduleId])
-    .filter(Boolean)
-    .sort((a, b) => (
-    a.level - b.level
-    || `${a.layer}:${a.name}`.localeCompare(`${b.layer}:${b.name}`)
-  ));
-  for (const node of sorted) {
-    if (!expandedSet.has(node.id)) {
-      continue;
-    }
-    const members = new Set();
-    const queue = [...(childrenByParent[node.id] || [])].map((item) => item.id);
-    const visited = new Set();
-    while (queue.length) {
-      const currentId = queue.shift();
-      if (!currentId || visited.has(currentId)) {
-        continue;
-      }
-      visited.add(currentId);
-      if (!visibleById[currentId]) {
-        continue;
-      }
-      members.add(currentId);
-      for (const child of childrenByParent[currentId] || []) {
-        queue.push(child.id);
-      }
-    }
-    if (!members.size) {
-      continue;
-    }
+    .filter(Boolean);
+  if (!path.length) {
+    return [];
+  }
+  const scopeParentId = path[path.length - 1].id;
+  const scopeChildIds = (nodes || [])
+    .filter((item) => item.parent_id === scopeParentId)
+    .map((item) => item.id);
+  const fallbackScopeIds = scopeChildIds.length
+    ? scopeChildIds
+    : (visibleById[scopeParentId] ? [scopeParentId] : []);
+  const defs = [];
+  for (let index = 0; index < path.length; index += 1) {
+    const node = path[index];
+    const depthFromInner = path.length - 1 - index;
     defs.push({
       id: node.id,
       name: node.name,
       layer: node.layer,
       level: node.level,
-      memberIds: Array.from(members),
+      memberIds: depthFromInner === 0 ? fallbackScopeIds : [],
+      depthFromInner,
     });
   }
   return defs;
@@ -556,27 +538,42 @@ function buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds, 
 function materializeExpandedContainers(containerDefs, nodeById, lanes = []) {
   const laneByLayer = Object.fromEntries((lanes || []).map((lane) => [lane.layer, lane]));
   const containers = [];
-  for (const def of containerDefs || []) {
+  const ordered = [...(containerDefs || [])].sort((a, b) => (
+    (a.depthFromInner || 0) - (b.depthFromInner || 0)
+  ));
+  let previousBounds = null;
+  for (const def of ordered) {
     const members = def.memberIds
       .map((moduleId) => nodeById[moduleId])
       .filter(Boolean);
-    if (!members.length) {
+    let minX;
+    let maxX;
+    let minY;
+    let maxY;
+    if (members.length) {
+      minX = Math.min(...members.map((item) => item.x));
+      maxX = Math.max(...members.map((item) => item.x + item.width));
+      minY = Math.min(...members.map((item) => item.y));
+      maxY = Math.max(...members.map((item) => item.y + item.height));
+    } else if (previousBounds) {
+      minX = previousBounds.x;
+      maxX = previousBounds.x + previousBounds.width;
+      minY = previousBounds.y;
+      maxY = previousBounds.y + previousBounds.height;
+    } else {
       continue;
     }
-    const minX = Math.min(...members.map((item) => item.x));
-    const maxX = Math.max(...members.map((item) => item.x + item.width));
-    const minY = Math.min(...members.map((item) => item.y));
-    const maxY = Math.max(...members.map((item) => item.y + item.height));
-    const padX = 28;
-    const padTop = 38;
-    const padBottom = 24;
+    const depthPad = Math.max(0, Number(def.depthFromInner || 0));
+    const padX = 24 + Math.min(56, depthPad * 14);
+    const padTop = 34 + Math.min(64, depthPad * 14);
+    const padBottom = 20 + Math.min(40, depthPad * 10);
     const lane = laneByLayer[def.layer];
-    const laneTopMin = lane ? lane.y + 48 : 8;
+    const laneTopMin = lane ? lane.y + 44 : 8;
     const x = Math.max(8, minX - padX);
     const y = Math.max(laneTopMin, minY - padTop);
     const width = Math.max(220, maxX - minX + padX * 2);
     const height = Math.max(160, maxY - minY + padTop + padBottom);
-    containers.push({
+    const box = {
       id: def.id,
       name: def.name,
       layer: def.layer,
@@ -586,9 +583,11 @@ function materializeExpandedContainers(containerDefs, nodeById, lanes = []) {
       width,
       height,
       memberCount: members.length,
-    });
+    };
+    containers.push(box);
+    previousBounds = box;
   }
-  return containers;
+  return containers.reverse();
 }
 function boundsWithPadding(layout, nodes, lanes, moduleContainers) {
   const candidates = [
@@ -615,9 +614,8 @@ function layoutGraph(
   portsByModule,
   summaryByModule = {},
   summarySourceByModule = {},
-  childrenByParent = {},
-  expandedModuleIds = new Set(),
   moduleById = {},
+  focusPathIds = [],
 ) {
   const groups = new Map();
   for (const node of nodes) {
@@ -845,7 +843,7 @@ function layoutGraph(
     maxHeight = Math.max(maxHeight, laneHeight + 110);
   }
   const width = Math.max(640, totalWidth - laneGap + 130);
-  const containerDefs = buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds, moduleById);
+  const containerDefs = buildExpandedContainerDefs(nodes, focusPathIds, moduleById);
   const nodeById = Object.fromEntries(drawNodes.map((item) => [item.id, item]));
   const moduleContainers = materializeExpandedContainers(containerDefs, nodeById, lanes);
   const sized = boundsWithPadding(
@@ -1155,6 +1153,7 @@ function App() {
   const [showEdgeLabels, setShowEdgeLabels] = useState(true);
   const [edgeMinCount, setEdgeMinCount] = useState(1);
   const [edgeScope, setEdgeScope] = useState("all");
+  const [selectedAroundHops, setSelectedAroundHops] = useState(-1);
   const [edgeFilters, setEdgeFilters] = useState({});
   const [busy, setBusy] = useState({ build: false, diff: false, ci: false, refresh: false });
   const [diffInput, setDiffInput] = useState({ base: "main", head: "HEAD" });
@@ -1384,22 +1383,59 @@ function App() {
       // ignore storage errors
     }
   }, [edgeFilters]);
+  const aroundNodeIds = useMemo(() => {
+    if (selectedAroundHops < 0 || !selectedModuleId || !viewGraph.nodes.some((item) => item.id === selectedModuleId)) {
+      return null;
+    }
+    const keep = new Set([selectedModuleId]);
+    let frontier = new Set([selectedModuleId]);
+    for (let hop = 0; hop < selectedAroundHops && frontier.size; hop += 1) {
+      const next = new Set();
+      for (const edge of viewGraph.edges) {
+        if (frontier.has(edge.src_id) && !keep.has(edge.dst_id)) {
+          keep.add(edge.dst_id);
+          next.add(edge.dst_id);
+        }
+        if (frontier.has(edge.dst_id) && !keep.has(edge.src_id)) {
+          keep.add(edge.src_id);
+          next.add(edge.src_id);
+        }
+      }
+      frontier = next;
+    }
+    return keep;
+  }, [selectedAroundHops, selectedModuleId, viewGraph.nodes, viewGraph.edges]);
+  const scopedNodes = useMemo(
+    () => (aroundNodeIds ? viewGraph.nodes.filter((item) => aroundNodeIds.has(item.id)) : viewGraph.nodes),
+    [viewGraph.nodes, aroundNodeIds],
+  );
+  const scopedEdges = useMemo(
+    () => (aroundNodeIds
+      ? viewGraph.edges.filter((edge) => aroundNodeIds.has(edge.src_id) && aroundNodeIds.has(edge.dst_id))
+      : viewGraph.edges),
+    [viewGraph.edges, aroundNodeIds],
+  );
   const maxEdgeCount = useMemo(
-    () => Math.max(1, ...viewGraph.edges.map((edge) => Math.max(1, Number(edge.count) || 1))),
-    [viewGraph.edges],
+    () => Math.max(1, ...scopedEdges.map((edge) => Math.max(1, Number(edge.count) || 1))),
+    [scopedEdges],
   );
   const effectiveEdgeMinCount = Math.min(Math.max(1, edgeMinCount), maxEdgeCount);
   const selectedInCurrentDepth = useMemo(
-    () => !!selectedModuleId && viewGraph.nodes.some((item) => item.id === selectedModuleId),
-    [selectedModuleId, viewGraph.nodes],
+    () => !!selectedModuleId && scopedNodes.some((item) => item.id === selectedModuleId),
+    [selectedModuleId, scopedNodes],
   );
   useEffect(() => {
     if (edgeScope === "selected" && !selectedInCurrentDepth) {
       setEdgeScope("all");
     }
   }, [edgeScope, selectedInCurrentDepth]);
+  useEffect(() => {
+    if (selectedAroundHops >= 0 && !selectedInCurrentDepth) {
+      setSelectedAroundHops(-1);
+    }
+  }, [selectedAroundHops, selectedInCurrentDepth]);
   const visibleEdges = useMemo(
-    () => viewGraph.edges
+    () => scopedEdges
       .filter((edge) => edgeFilters[edge.kind] !== false)
       .filter((edge) => (Number(edge.count) || 1) >= effectiveEdgeMinCount)
       .filter((edge) => {
@@ -1408,27 +1444,25 @@ function App() {
         }
         return edge.src_id === selectedModuleId || edge.dst_id === selectedModuleId;
       }),
-    [viewGraph.edges, edgeFilters, effectiveEdgeMinCount, edgeScope, selectedInCurrentDepth, selectedModuleId],
+    [scopedEdges, edgeFilters, effectiveEdgeMinCount, edgeScope, selectedInCurrentDepth, selectedModuleId],
   );
   const autoLayout = useMemo(
     () => layoutGraph(
-      viewGraph.nodes,
+      scopedNodes,
       visibleEdges,
       portsByModule,
       llmSummaries,
       llmSummarySource,
-      childrenByParent,
-      expandedModuleIds,
       moduleById,
+      viewGraph.focusPathIds,
     ),
     [
-      viewGraph.nodes,
+      scopedNodes,
+      viewGraph.focusPathIds,
       visibleEdges,
       portsByModule,
       llmSummaries,
       llmSummarySource,
-      childrenByParent,
-      expandedModuleIds,
       moduleById,
     ],
   );
@@ -1942,6 +1976,7 @@ function App() {
     setActivePortFocus(null);
     setCurrentParentId(moduleId);
     setSelectedModuleId(moduleId);
+    setSelectedAroundHops(-1);
     setExpandedModuleIds((old) => {
       const next = withFocusPathExpanded(
         old,
@@ -1955,29 +1990,17 @@ function App() {
     });
   }
   function toggleModuleExpand(moduleId) {
-    if (!moduleById[moduleId] || !hasChildren(moduleId)) {
-      focusModule(moduleId);
+    if (!moduleById[moduleId]) {
       return;
     }
     setSelectedEdgeId("");
     setActivePortFocus(null);
-    setCurrentParentId(moduleId);
     setSelectedModuleId(moduleId);
+    if (!hasChildren(moduleId)) return;
     setExpandedModuleIds((old) => {
-      let next;
-      if (old.has(moduleId)) {
-        next = collapseExpandedSubtree(old, moduleId, childrenByParent, systemModule?.id || "");
-      } else {
-        next = new Set(old);
-        next.add(moduleId);
-      }
-      next = withFocusPathExpanded(
-        next,
-        moduleId,
-        childrenByParent,
-        moduleById,
-        systemModule?.id || "",
-      );
+      const next = old.has(moduleId)
+        ? collapseExpandedSubtree(old, moduleId, childrenByParent, "")
+        : new Set(old).add(moduleId);
       return setsEqual(next, old) ? old : next;
     });
   }
@@ -1993,18 +2016,10 @@ function App() {
     if (!targets.length) {
       return;
     }
-    setSelectedEdgeId("");
-    setActivePortFocus(null);
-    setCurrentParentId(moduleId);
+    setSelectedEdgeId(""); setActivePortFocus(null);
     setSelectedModuleId(moduleId);
     setExpandedModuleIds((old) => {
-      let next = withFocusPathExpanded(
-        old,
-        moduleId,
-        childrenByParent,
-        moduleById,
-        systemModule?.id || "",
-      );
+      const next = new Set(old);
       for (const targetId of targets) {
         if (moduleById[targetId] && hasChildren(targetId)) {
           next.add(targetId);
@@ -2018,7 +2033,9 @@ function App() {
       suppressClickRef.current = false;
       return;
     }
-    focusModule(moduleId);
+    setSelectedEdgeId("");
+    setActivePortFocus(null);
+    setSelectedModuleId(moduleId);
   }
   async function refreshModel(autoBuild = true) {
     setBusy((old) => ({ ...old, refresh: true }));
@@ -2139,6 +2156,7 @@ function App() {
   useEffect(() => {
     setSelectedEdgeId("");
     setActivePortFocus(null);
+    setSelectedAroundHops(-1);
     setHoverNodeId("");
     dragRef.current = null;
     panRef.current = null;
@@ -2468,6 +2486,10 @@ function App() {
                 Selected Only
               </button>
             </div>
+            <div className="edge-scope-toggle" role="group" aria-label="Around selected">
+              <button type="button" onClick={() => setSelectedAroundHops((old) => Math.max(-1, old - 1))} disabled={!selectedInCurrentDepth || selectedAroundHops <= -1}>Remove Around</button>
+              <button type="button" onClick={() => setSelectedAroundHops((old) => Math.min(4, old + 1))} disabled={!selectedInCurrentDepth}>Add Around</button>
+            </div>
             {edgeKinds.map((kind) => (
               <span key={kind} className={`legend-item legend-${kind} ${edgeFilters[kind] !== false ? "active" : ""}`}>
                 {humanizeKind(kind)}
@@ -2510,7 +2532,7 @@ function App() {
           </div>
           <div className="drillbar-meta">
             <strong>Focus L{currentDepth}</strong>
-            <span>{viewGraph.nodes.length} modules</span>
+            <span>{scopedNodes.length} modules</span>
             <span>{visibleEdges.length} links</span>
             <span>Drag modules to rearrange · dblclick to expand/collapse</span>
             {moduleById[currentParentId]?.parent_id && (
