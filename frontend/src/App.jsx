@@ -413,8 +413,8 @@ function buildEdgeGeometries(edges, nodeById) {
     const outMeta = outgoingByEdgeId[edgeId] || { index: 0, count: 1 };
     const inMeta = incomingByEdgeId[edgeId] || { index: 0, count: 1 };
 
-    const startX = item.leftToRight ? item.source.x + item.source.width - 8 : item.source.x + 8;
-    const endX = item.leftToRight ? item.target.x + 8 : item.target.x + item.target.width - 8;
+    const startX = item.leftToRight ? item.source.x + item.source.width + 12 : item.source.x - 12;
+    const endX = item.leftToRight ? item.target.x - 12 : item.target.x + item.target.width + 12;
 
     const startY = distributeOnSpan(
       item.source.y + 24,
@@ -451,6 +451,15 @@ function buildEdgeGeometries(edges, nodeById) {
     }
 
     const trackY = topTrack + trackIndex * trackSpacing;
+    const globalOffset = ((trackIndex % 7) - 3) * 2;
+    if (item.leftToRight) {
+      sourceGateX += globalOffset;
+      targetGateX += globalOffset;
+    } else {
+      sourceGateX -= globalOffset;
+      targetGateX -= globalOffset;
+    }
+
     output[edgeId] = {
       path: [
         `M ${startX} ${startY}`,
@@ -460,6 +469,10 @@ function buildEdgeGeometries(edges, nodeById) {
         `L ${targetGateX} ${endY}`,
         `L ${endX} ${endY}`,
       ].join(" "),
+      startX,
+      startY,
+      endX,
+      endY,
       labelX: (sourceGateX + targetGateX) / 2,
       labelY: trackY - 5,
     };
@@ -1376,10 +1389,10 @@ function App() {
               >
                 <defs>
                   <marker id="arrow-dep" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
-                    <polygon points="0,0 9,3.5 0,7" fill="#25415d" />
+                    <polygon points="0,0 9,3.5 0,7" fill="#2c3948" />
                   </marker>
                   <marker id="arrow-intf" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
-                    <polygon points="0,0 9,3.5 0,7" fill="#158f73" />
+                    <polygon points="0,0 9,3.5 0,7" fill="#2f6fa5" />
                   </marker>
                   <marker id="arrow-file" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
                     <polygon points="0,0 9,3.5 0,7" fill="#b56f1f" />
@@ -1440,6 +1453,11 @@ function App() {
 
                 const baseWidth = edge.kind === "interface" ? 2.3 : edge.kind === "dependency_file" ? 2 : 2.1;
                 const weightWidth = Math.min(1.8, edge.count * 0.22);
+                const dashArray = edge.kind === "dependency_file"
+                  ? "9 5"
+                  : edge.kind === "other"
+                    ? "3 5"
+                    : undefined;
 
                 return (
                   <g
@@ -1454,19 +1472,38 @@ function App() {
                     <path
                       d={geometry.path}
                       className="edge-hitbox"
-                      markerEnd={marker}
                     />
+                    {edge.kind === "interface" && (
+                      <path
+                        d={geometry.path}
+                        className={`edge edge-interface-shell ${selected ? "selected" : ""} ${dimmed ? "dimmed" : ""}`}
+                        style={{ strokeWidth: selectedByEdge ? 8 : selected ? 7 : 6.4 }}
+                      />
+                    )}
                     <path
                       d={geometry.path}
                       className={cls.join(" ")}
                       markerEnd={marker}
                       style={{
+                        strokeDasharray: dashArray,
                         strokeWidth: selectedByEdge
                           ? baseWidth + 2.3
                           : selected
                             ? baseWidth + 1.4
                             : baseWidth + weightWidth,
                       }}
+                    />
+                    <circle
+                      cx={geometry.startX}
+                      cy={geometry.startY}
+                      r={selectedByEdge ? 3.8 : 3}
+                      className={`edge-endpoint edge-endpoint-${edgeKindClass} ${selected ? "selected" : ""}`}
+                    />
+                    <circle
+                      cx={geometry.endX}
+                      cy={geometry.endY}
+                      r={selectedByEdge ? 3.8 : 3}
+                      className={`edge-endpoint edge-endpoint-${edgeKindClass} ${selected ? "selected" : ""}`}
                     />
                     <text className={`edge-label ${selected ? "selected" : ""}`} x={geometry.labelX} y={geometry.labelY}>
                       {clip(edge.label, 34)}
@@ -1496,7 +1533,8 @@ function App() {
                         }
                       }}
                     >
-                      <rect x={node.x} y={node.y} width={node.width} height={node.height} rx="14" />
+                      <rect x={node.x} y={node.y} width={node.width} height={node.height} rx="14" className="node-body" />
+                      <rect x={node.x + 1} y={node.y + 1} width={node.width - 2} height="30" rx="12" className="node-header" />
                       <text x={node.x + 14} y={node.y + 26} className="title">{clip(node.name, 34)}</text>
                       <text x={node.x + 14} y={node.y + 46} className="meta">Layer: {node.layer} · L{node.level}</text>
                       {node.summary && (
@@ -1516,20 +1554,33 @@ function App() {
                       )}
 
                       {node.inPorts.slice(0, 3).map((port, idx) => (
-                        <text key={`${port.id}-in`} x={node.x + 14} y={node.portStartY + idx * 16} className="port in-port">
-                          IN {clip(`${port.protocol} ${port.name}`, 22)}
-                        </text>
+                        <g key={`${port.id}-in`}>
+                          <line x1={node.x - 12} y1={node.portStartY + idx * 16 - 4} x2={node.x} y2={node.portStartY + idx * 16 - 4} className="pin-line in" />
+                          <rect x={node.x - 4} y={node.portStartY + idx * 16 - 7} width="6" height="6" className="pin-dot in" />
+                          <text x={node.x + 14} y={node.portStartY + idx * 16} className="port in-port">
+                            IN {clip(`${port.protocol} ${port.name}`, 22)}
+                          </text>
+                        </g>
                       ))}
                       {node.outPorts.slice(0, 3).map((port, idx) => (
-                        <text
-                          key={`${port.id}-out`}
-                          x={node.x + node.width - 14}
-                          y={node.portStartY + idx * 16}
-                          textAnchor="end"
-                          className="port out-port"
-                        >
-                          OUT {clip(`${port.protocol} ${port.name}`, 22)}
-                        </text>
+                        <g key={`${port.id}-out`}>
+                          <line
+                            x1={node.x + node.width}
+                            y1={node.portStartY + idx * 16 - 4}
+                            x2={node.x + node.width + 12}
+                            y2={node.portStartY + idx * 16 - 4}
+                            className="pin-line out"
+                          />
+                          <rect x={node.x + node.width - 2} y={node.portStartY + idx * 16 - 7} width="6" height="6" className="pin-dot out" />
+                          <text
+                            x={node.x + node.width - 14}
+                            y={node.portStartY + idx * 16}
+                            textAnchor="end"
+                            className="port out-port"
+                          >
+                            OUT {clip(`${port.protocol} ${port.name}`, 22)}
+                          </text>
+                        </g>
                       ))}
 
                       {canDrill && (

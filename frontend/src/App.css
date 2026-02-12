@@ -9,9 +9,9 @@
   --line-strong: #355b82;
   --accent: #1b8f7b;
   --alert: #d86535;
-  --dep: #345879;
+  --dep: #2c3948;
   --dep-file: #996328;
-  --intf: #1b8f7b;
+  --intf: #2f6fa5;
   --other: #6a7280;
   --shadow: 0 10px 28px rgba(30, 53, 78, 0.14);
 }
@@ -634,9 +634,10 @@ button:disabled {
 
 .edge {
   fill: none;
-  opacity: 0.72;
+  opacity: 0.84;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transition: opacity 120ms ease, stroke-width 120ms ease, filter 120ms ease;
 }
 
 .edge-group {
@@ -652,18 +653,23 @@ button:disabled {
 
 .edge.selected {
   opacity: 1;
+  filter: drop-shadow(0 0 2px rgba(34, 67, 98, 0.24));
 }
 
 .edge.dimmed {
-  opacity: 0.14;
+  opacity: 0.12;
 }
 
 .edge-dependency {
   stroke: var(--dep);
 }
 
+.edge-interface-shell {
+  stroke: rgba(94, 137, 179, 0.4);
+}
+
 .edge-interface {
-  stroke: var(--intf);
+  stroke: #2f6fa5;
 }
 
 .edge-dependency_file {
@@ -681,11 +687,43 @@ button:disabled {
   pointer-events: none;
   opacity: 0.8;
   font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 3;
+  paint-order: stroke;
 }
 
 .edge-label.selected {
   opacity: 1;
   fill: #1f3247;
+}
+
+.edge-endpoint {
+  stroke-width: 1.2;
+  opacity: 0.9;
+}
+
+.edge-endpoint.selected {
+  opacity: 1;
+}
+
+.edge-endpoint-dependency {
+  fill: var(--dep);
+  stroke: #1d2834;
+}
+
+.edge-endpoint-interface {
+  fill: var(--intf);
+  stroke: #1d4f79;
+}
+
+.edge-endpoint-dependency_file {
+  fill: #9f6a2f;
+  stroke: #714617;
+}
+
+.edge-endpoint-other {
+  fill: #6a7280;
+  stroke: #4d5562;
 }
 
 .no-edge-note {
@@ -702,7 +740,7 @@ button:disabled {
   cursor: grabbing;
 }
 
-.node rect {
+.node .node-body {
   fill: var(--panel-strong);
   stroke: #3c6187;
   stroke-width: 1.6;
@@ -710,21 +748,59 @@ button:disabled {
   filter: drop-shadow(1px 2px 2px rgba(52, 78, 104, 0.12));
 }
 
-.node:hover rect {
+.node .node-header {
+  fill: #cfe1f2;
+  fill-opacity: 0.78;
+  stroke: #95b3cf;
+  stroke-width: 1;
+}
+
+.node:hover .node-body {
   stroke: #1f7f70;
   stroke-width: 2.1;
 }
 
-.node.active rect {
+.node.active .node-body {
   stroke: var(--alert);
   stroke-width: 2.4;
   fill: #fff4eb;
 }
 
-.node.dragging rect {
+.node.active .node-header {
+  fill: #ffd9bf;
+  stroke: #db8b56;
+}
+
+.node.dragging .node-body {
   stroke: #1a8f7b;
   stroke-width: 2.6;
   filter: drop-shadow(3px 5px 7px rgba(20, 62, 96, 0.25));
+}
+
+.node .pin-line {
+  stroke-width: 1.7;
+}
+
+.node .pin-line.in {
+  stroke: #2d6a9c;
+}
+
+.node .pin-line.out {
+  stroke: #8a5d26;
+}
+
+.node .pin-dot {
+  stroke-width: 0.9;
+}
+
+.node .pin-dot.in {
+  fill: #cde6f8;
+  stroke: #2d6a9c;
+}
+
+.node .pin-dot.out {
+  fill: #f1dec9;
+  stroke: #8a5d26;
 }
 
 .node .title {
