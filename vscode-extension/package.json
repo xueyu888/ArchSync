@@ -81,7 +81,8 @@
         },
         {
           "id": "archsyncGraphView",
-          "name": "Graph"
+          "name": "Graph",
+          "type": "webview"
         }
       ]
     },
@@ -98,10 +99,6 @@
       {
         "view": "archsyncModulesView",
         "contents": "Run [Build Architecture Model](command:archsync.buildModel) to load modules and summaries."
-      },
-      {
-        "view": "archsyncGraphView",
-        "contents": "Use [Rebuild Model for Sidebar](command:archsync.rebuildSidebar) and click nodes to drill/open source."
       }
     ],
     "menus": {
