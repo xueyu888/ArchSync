@@ -801,6 +801,15 @@ button.active-focus-toggle {
     repeating-linear-gradient(90deg, rgba(180, 198, 216, 0.32) 0, rgba(180, 198, 216, 0.32) 1px, transparent 1px, transparent 26px);
 }
 
+.canvas-wrap.hand-pan {
+  cursor: grab;
+}
+
+.canvas-wrap.hand-pan.panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .diagram {
   border: 2px solid #bacad9;
   border-radius: 14px;
@@ -828,21 +837,21 @@ button.active-focus-toggle {
 }
 
 .module-container .module-container-body {
-  fill: rgba(209, 225, 243, 0.2);
-  stroke: rgba(86, 120, 154, 0.48);
-  stroke-width: 1.2;
-  stroke-dasharray: 7 5;
+  fill: rgba(209, 225, 243, 0.12);
+  stroke: rgba(86, 120, 154, 0.42);
+  stroke-width: 1.1;
+  stroke-dasharray: 6 5;
 }
 
 .module-container.focused .module-container-body {
-  fill: rgba(248, 226, 206, 0.3);
-  stroke: rgba(216, 101, 53, 0.72);
-  stroke-width: 1.6;
+  fill: rgba(248, 226, 206, 0.22);
+  stroke: rgba(216, 101, 53, 0.58);
+  stroke-width: 1.3;
 }
 
 .module-container .module-container-title {
-  fill: #2a4f73;
-  font-size: 11px;
+  fill: #355877;
+  font-size: 10px;
   font-weight: 700;
   font-family: "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
 }
@@ -851,11 +860,15 @@ button.active-focus-toggle {
   fill: #8f4d2d;
 }
 
-.module-container .module-container-meta {
-  fill: #5b7189;
-  font-size: 9px;
-  font-weight: 700;
-  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+.module-container .module-container-chip {
+  fill: rgba(239, 246, 255, 0.9);
+  stroke: rgba(126, 157, 187, 0.82);
+  stroke-width: 1;
+}
+
+.module-container.focused .module-container-chip {
+  fill: rgba(255, 241, 229, 0.92);
+  stroke: rgba(201, 122, 72, 0.9);
 }
 
 .edge {

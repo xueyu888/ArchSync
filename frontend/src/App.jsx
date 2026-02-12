@@ -516,11 +516,22 @@ function buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds) 
     a.level - b.level
     || `${a.layer}:${a.name}`.localeCompare(`${b.layer}:${b.name}`)
   ));
+  function hasExpandedAncestor(node) {
+    let current = node.parent_id ? visibleById[node.parent_id] : null;
+    while (current) {
+      if (expandedSet.has(current.id)) {
+        return true;
+      }
+      current = current.parent_id ? visibleById[current.parent_id] : null;
+    }
+    return false;
+  }
   for (const node of sorted) {
-    if (!expandedSet.has(node.id) || node.level <= 0) {
+    const sameAsLayer = String(node.name || "").trim().toLowerCase() === String(node.layer || "").trim().toLowerCase();
+    if (!expandedSet.has(node.id) || node.level <= 0 || hasExpandedAncestor(node) || sameAsLayer) {
       continue;
     }
-    const members = new Set([node.id]);
+    const members = new Set();
     const queue = [...(childrenByParent[node.id] || [])].map((item) => item.id);
     const visited = new Set();
     while (queue.length) {
@@ -537,19 +548,21 @@ function buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds) 
         queue.push(child.id);
       }
     }
-    if (members.size <= 1) {
+    if (!members.size) {
       continue;
     }
     defs.push({
       id: node.id,
       name: node.name,
+      layer: node.layer,
       level: node.level,
       memberIds: Array.from(members),
     });
   }
   return defs;
 }
-function materializeExpandedContainers(containerDefs, nodeById) {
+function materializeExpandedContainers(containerDefs, nodeById, lanes = []) {
+  const laneByLayer = Object.fromEntries((lanes || []).map((lane) => [lane.layer, lane]));
   const containers = [];
   for (const def of containerDefs || []) {
     const members = def.memberIds
@@ -565,13 +578,16 @@ function materializeExpandedContainers(containerDefs, nodeById) {
     const padX = 28;
     const padTop = 38;
     const padBottom = 24;
+    const lane = laneByLayer[def.layer];
+    const laneTopMin = lane ? lane.y + 48 : 8;
     const x = Math.max(8, minX - padX);
-    const y = Math.max(8, minY - padTop);
+    const y = Math.max(laneTopMin, minY - padTop);
     const width = Math.max(220, maxX - minX + padX * 2);
     const height = Math.max(160, maxY - minY + padTop + padBottom);
     containers.push({
       id: def.id,
       name: def.name,
+      layer: def.layer,
       level: def.level,
       x,
       y,
@@ -622,7 +638,7 @@ function layoutGraph(
   const laneGap = 96;
   const top = 84;
   const left = 76;
-  const laneHeader = 46;
+  const laneHeader = 58;
   const lanePadding = 28;
   const columnGap = 64;
   const drawNodes = [];
@@ -838,7 +854,7 @@ function layoutGraph(
   const width = Math.max(640, totalWidth - laneGap + 130);
   const containerDefs = buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds);
   const nodeById = Object.fromEntries(drawNodes.map((item) => [item.id, item]));
-  const moduleContainers = materializeExpandedContainers(containerDefs, nodeById);
+  const moduleContainers = materializeExpandedContainers(containerDefs, nodeById, lanes);
   const sized = boundsWithPadding(
     { width, height: maxHeight },
     drawNodes,
@@ -897,7 +913,7 @@ function applyManualLayout(layout, manualPositions) {
     };
   });
   const nodeById = Object.fromEntries(nodes.map((item) => [item.id, item]));
-  const moduleContainers = materializeExpandedContainers(layout.containerDefs || [], nodeById);
+  const moduleContainers = materializeExpandedContainers(layout.containerDefs || [], nodeById, lanes);
   const sized = boundsWithPadding(layout, nodes, lanes, moduleContainers);
   return {
     ...layout,
@@ -1154,6 +1170,7 @@ function App() {
   const [manualLayouts, setManualLayouts] = useState({});
   const [draggingNodeId, setDraggingNodeId] = useState("");
   const [dragPreview, setDragPreview] = useState(null);
+  const [panningCanvas, setPanningCanvas] = useState(false);
   const [hoverCard, setHoverCard] = useState(null);
   const [hoverNodeId, setHoverNodeId] = useState("");
   const [activePortFocus, setActivePortFocus] = useState(null);
@@ -1168,6 +1185,7 @@ function App() {
   const svgRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const dragRef = useRef(null);
+  const panRef = useRef(null);
   const suppressClickRef = useRef(false);
   const effectiveModules = useMemo(() => {
     return (model?.modules || []).map((item) => {
@@ -1867,6 +1885,56 @@ function App() {
     setDragPreview(null);
     setDraggingNodeId("");
   }
+  function startCanvasPan(event) {
+    if (event.button !== 0 && event.button !== 1) {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    const fromInteractive = target.closest("g.node") || target.closest("g.edge-group");
+    if (fromInteractive && event.button !== 1) {
+      return;
+    }
+    const wrap = canvasWrapRef.current;
+    if (!wrap) {
+      return;
+    }
+    panRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: wrap.scrollLeft,
+      scrollTop: wrap.scrollTop,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setPanningCanvas(true);
+  }
+  function moveCanvasPan(event) {
+    const pan = panRef.current;
+    const wrap = canvasWrapRef.current;
+    if (!pan || !wrap || pan.pointerId !== event.pointerId) {
+      return;
+    }
+    const dx = event.clientX - pan.startX;
+    const dy = event.clientY - pan.startY;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      pan.moved = true;
+      suppressClickRef.current = true;
+    }
+    wrap.scrollLeft = pan.scrollLeft - dx;
+    wrap.scrollTop = pan.scrollTop - dy;
+  }
+  function finishCanvasPan(event) {
+    const pan = panRef.current;
+    if (!pan || pan.pointerId !== event.pointerId) {
+      return;
+    }
+    panRef.current = null;
+    setPanningCanvas(false);
+  }
   function hasChildren(moduleId) {
     return (childrenByParent[moduleId] || []).length > 0;
   }
@@ -2078,8 +2146,10 @@ function App() {
     setActivePortFocus(null);
     setHoverNodeId("");
     dragRef.current = null;
+    panRef.current = null;
     setDraggingNodeId("");
     setDragPreview(null);
+    setPanningCanvas(false);
     setHoverCard(null);
   }, [currentParentId]);
   function zoomToFit() {
@@ -2508,17 +2578,24 @@ function App() {
               )}
             </section>
             )}
-            <section className="canvas-wrap" ref={canvasWrapRef} onWheel={handleCanvasWheel}>
+            <section
+              className={`canvas-wrap hand-pan ${panningCanvas ? "panning" : ""}`}
+              ref={canvasWrapRef}
+              onWheel={handleCanvasWheel}
+              onPointerDown={startCanvasPan}
+              onPointerMove={moveCanvasPan}
+              onPointerUp={finishCanvasPan}
+              onPointerCancel={finishCanvasPan}
+            >
               {!model && <p className="empty">No model loaded yet.</p>}
               {model && (
                 <>
                   <svg
                     ref={svgRef}
                     className="diagram"
-                    width={renderLayout.width}
-                    height={renderLayout.height}
+                    width={Math.max(1, Math.round(renderLayout.width * zoom) + 600)}
+                    height={Math.max(1, Math.round(renderLayout.height * zoom) + 360)}
                     viewBox={`0 0 ${renderLayout.width} ${renderLayout.height}`}
-                    style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}
                     onPointerMove={moveNodeDrag}
                     onPointerUp={finishNodeDrag}
                     onPointerCancel={finishNodeDrag}
@@ -2585,6 +2662,11 @@ function App() {
                   ))}
                   {(renderLayout.moduleContainers || []).map((container) => {
                     const focused = container.id === currentParentId;
+                    const title = clipByUnits(moduleById[container.id]?.name || container.name || container.id, 16);
+                    const sameAsLane = String(container.layer || "").trim().toLowerCase() === String(container.name || "").trim().toLowerCase();
+                    const chipWidth = Math.max(68, textUnits(title) * 7 + 18);
+                    const chipX = container.x + container.width - chipWidth - 10;
+                    const chipY = container.y + 8;
                     return (
                       <g key={`container-${container.id}`} className={`module-container ${focused ? "focused" : ""}`}>
                         <rect
@@ -2595,12 +2677,14 @@ function App() {
                           rx="16"
                           className="module-container-body"
                         />
-                        <text x={container.x + 12} y={container.y + 18} className="module-container-title">
-                          {clipByUnits(moduleById[container.id]?.name || container.name || container.id, 28)}
-                        </text>
-                        <text x={container.x + 12} y={container.y + 32} className="module-container-meta">
-                          L{container.level} · {container.memberCount} nodes
-                        </text>
+                        {!sameAsLane && (
+                          <>
+                            <rect x={chipX} y={chipY} width={chipWidth} height="16" rx="8" className="module-container-chip" />
+                            <text x={chipX + chipWidth / 2} y={chipY + 12} textAnchor="middle" className="module-container-title">
+                              {title}
+                            </text>
+                          </>
+                        )}
                       </g>
                     );
                   })}
@@ -2764,6 +2848,7 @@ function App() {
                   const inBadgeWidth = Math.max(58, inBadgeLabel.length * 6.1 + 14);
                   const outBadgeWidth = Math.max(62, outBadgeLabel.length * 6.1 + 14);
                   const badgeY = node.y + node.height - 23;
+                  const hintY = node.y + node.height - (outerOutCount > 0 ? 28 : 12);
                   const isHoveredNode = hoverNodeId === node.id;
                   const isNeighborNode = hoverContext.neighborIds.has(node.id);
                   const dimmedByHover = hoverNodeId && !isHoveredNode && !isNeighborNode;
@@ -3018,7 +3103,7 @@ function App() {
                       {canExpand && (
                         <text
                           x={node.x + node.width - 12}
-                          y={node.y + node.height - 12}
+                          y={hintY}
                           textAnchor="end"
                           className="drill-hint"
                         >
