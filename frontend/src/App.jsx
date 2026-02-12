@@ -167,6 +167,7 @@ function collectViewGraph(model, currentParentId, childrenByParent, moduleById) 
 
   const edges = Array.from(edgeMap.values())
     .map((rawEdge) => ({
+      raw_labels: Array.from(rawEdge.labels || []).filter(Boolean).sort(),
       id: rawEdge.id,
       src_id: rawEdge.src_id,
       dst_id: rawEdge.dst_id,
@@ -318,24 +319,153 @@ function applyManualLayout(layout, manualPositions) {
   };
 }
 
-function edgePath(source, target, seed, pairIndex, pairCount) {
-  const leftToRight = source.x <= target.x;
-  const startX = leftToRight ? source.x + source.width - 8 : source.x + 8;
-  const endX = leftToRight ? target.x + 8 : target.x + target.width - 8;
+function clampZoom(value) {
+  return Math.min(2.8, Math.max(0.35, value));
+}
 
-  const spread = (pairIndex - (pairCount - 1) / 2) * 16;
-  const jitter = ((seed % 5) - 2) * 1.6;
-  const startY = source.y + source.height / 2 + spread + jitter;
-  const endY = target.y + target.height / 2 + spread - jitter;
+function distributeOnSpan(min, max, index, count) {
+  if (count <= 1) {
+    return (min + max) / 2;
+  }
+  const span = Math.max(10, max - min);
+  const step = span / (count + 1);
+  return min + step * (index + 1);
+}
 
-  const center = (startX + endX) / 2;
-  const midX = leftToRight ? Math.max(startX + 70, center) : Math.min(startX - 70, center);
+function buildEdgeGeometries(edges, nodeById) {
+  if (!edges.length) {
+    return {};
+  }
 
-  return {
-    path: `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`,
-    labelX: midX + (leftToRight ? 8 : -8),
-    labelY: (startY + endY) / 2 - 7,
+  const records = edges
+    .map((edge) => {
+      const source = nodeById[edge.src_id];
+      const target = nodeById[edge.dst_id];
+      if (!source || !target) {
+        return null;
+      }
+      const leftToRight = source.x + source.width / 2 <= target.x + target.width / 2;
+      return {
+        edge,
+        source,
+        target,
+        leftToRight,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const keyA = `${a.edge.src_id}|${a.edge.dst_id}|${a.edge.kind}|${a.edge.id}`;
+      const keyB = `${b.edge.src_id}|${b.edge.dst_id}|${b.edge.kind}|${b.edge.id}`;
+      return keyA.localeCompare(keyB);
+    });
+
+  const recordByEdgeId = Object.fromEntries(records.map((item) => [item.edge.id, item]));
+  const outgoing = new Map();
+  const incoming = new Map();
+
+  for (const item of records) {
+    const sourceSide = item.leftToRight ? "right" : "left";
+    const targetSide = item.leftToRight ? "left" : "right";
+    const outKey = `${item.edge.src_id}|${sourceSide}`;
+    const inKey = `${item.edge.dst_id}|${targetSide}`;
+    if (!outgoing.has(outKey)) {
+      outgoing.set(outKey, []);
+    }
+    if (!incoming.has(inKey)) {
+      incoming.set(inKey, []);
+    }
+    outgoing.get(outKey).push(item.edge.id);
+    incoming.get(inKey).push(item.edge.id);
+  }
+
+  const slotSort = (edgeIdA, edgeIdB) => {
+    const edgeA = recordByEdgeId[edgeIdA]?.edge;
+    const edgeB = recordByEdgeId[edgeIdB]?.edge;
+    const keyA = `${edgeA?.dst_id || ""}|${edgeA?.kind || ""}|${edgeA?.id || ""}`;
+    const keyB = `${edgeB?.dst_id || ""}|${edgeB?.kind || ""}|${edgeB?.id || ""}`;
+    return keyA.localeCompare(keyB);
   };
+
+  const outgoingByEdgeId = {};
+  const incomingByEdgeId = {};
+
+  for (const edgeIds of outgoing.values()) {
+    edgeIds.sort(slotSort);
+    edgeIds.forEach((edgeId, index) => {
+      outgoingByEdgeId[edgeId] = { index, count: edgeIds.length };
+    });
+  }
+
+  for (const edgeIds of incoming.values()) {
+    edgeIds.sort(slotSort);
+    edgeIds.forEach((edgeId, index) => {
+      incomingByEdgeId[edgeId] = { index, count: edgeIds.length };
+    });
+  }
+
+  const topMost = Math.min(...records.map((item) => Math.min(item.source.y, item.target.y)));
+  const topTrack = Math.max(40, topMost - 56);
+  const trackSpacing = 14;
+
+  const output = {};
+  records.forEach((item, trackIndex) => {
+    const edgeId = item.edge.id;
+    const outMeta = outgoingByEdgeId[edgeId] || { index: 0, count: 1 };
+    const inMeta = incomingByEdgeId[edgeId] || { index: 0, count: 1 };
+
+    const startX = item.leftToRight ? item.source.x + item.source.width - 8 : item.source.x + 8;
+    const endX = item.leftToRight ? item.target.x + 8 : item.target.x + item.target.width - 8;
+
+    const startY = distributeOnSpan(
+      item.source.y + 24,
+      item.source.y + item.source.height - 18,
+      outMeta.index,
+      outMeta.count,
+    );
+
+    const endY = distributeOnSpan(
+      item.target.y + 24,
+      item.target.y + item.target.height - 18,
+      inMeta.index,
+      inMeta.count,
+    );
+
+    let sourceGateX = item.leftToRight
+      ? startX + 22 + outMeta.index * 9
+      : startX - 22 - outMeta.index * 9;
+
+    let targetGateX = item.leftToRight
+      ? endX - 22 - inMeta.index * 9
+      : endX + 22 + inMeta.index * 9;
+
+    const minGap = 18;
+    if (item.leftToRight && sourceGateX > targetGateX - minGap) {
+      const center = (startX + endX) / 2;
+      sourceGateX = Math.min(sourceGateX, center - minGap / 2);
+      targetGateX = Math.max(targetGateX, center + minGap / 2);
+    }
+    if (!item.leftToRight && sourceGateX < targetGateX + minGap) {
+      const center = (startX + endX) / 2;
+      sourceGateX = Math.max(sourceGateX, center + minGap / 2);
+      targetGateX = Math.min(targetGateX, center - minGap / 2);
+    }
+
+    const trackY = topTrack + trackIndex * trackSpacing;
+    output[edgeId] = {
+      path: [
+        `M ${startX} ${startY}`,
+        `L ${sourceGateX} ${startY}`,
+        `L ${sourceGateX} ${trackY}`,
+        `L ${targetGateX} ${trackY}`,
+        `L ${targetGateX} ${endY}`,
+        `L ${endX} ${endY}`,
+      ].join(" "),
+      labelX: (sourceGateX + targetGateX) / 2,
+      labelY: trackY - 5,
+    };
+  });
+
+  return output;
 }
 
 function summarizeModel(model, snapshot) {
@@ -376,6 +506,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [levelFilter, setLevelFilter] = useState("all");
   const [zoom, setZoom] = useState(1);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [selectedEdgeId, setSelectedEdgeId] = useState("");
 
   const [edgeFilters, setEdgeFilters] = useState({});
 
@@ -469,6 +601,23 @@ function App() {
     }
   }, [layoutScope, manualLayouts]);
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("archsync.sidebarHidden");
+      setSidebarHidden(raw === "1");
+    } catch {
+      setSidebarHidden(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("archsync.sidebarHidden", sidebarHidden ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
+  }, [sidebarHidden]);
+
   const visibleEdges = useMemo(
     () => viewGraph.edges.filter((edge) => edgeFilters[edge.kind] !== false),
     [viewGraph.edges, edgeFilters],
@@ -494,26 +643,10 @@ function App() {
     [layout.nodes],
   );
 
-  const edgeMetaById = useMemo(() => {
-    const groups = new Map();
-    const output = {};
-
-    for (const edge of visibleEdges) {
-      const pairKey = `${edge.src_id}|${edge.dst_id}`;
-      if (!groups.has(pairKey)) {
-        groups.set(pairKey, []);
-      }
-      groups.get(pairKey).push(edge.id);
-    }
-
-    for (const edgeIds of groups.values()) {
-      edgeIds.forEach((edgeId, index) => {
-        output[edgeId] = { index, count: edgeIds.length };
-      });
-    }
-
-    return output;
-  }, [visibleEdges]);
+  const edgeGeometryById = useMemo(
+    () => buildEdgeGeometries(visibleEdges, drawNodeById),
+    [visibleEdges, drawNodeById],
+  );
 
   const availableLevels = useMemo(() => {
     return Array.from(
@@ -639,6 +772,20 @@ function App() {
     })),
     [visibleEdges, moduleById],
   );
+
+  const selectedEdge = useMemo(
+    () => visibleEdgeRows.find((item) => item.id === selectedEdgeId) || null,
+    [visibleEdgeRows, selectedEdgeId],
+  );
+
+  useEffect(() => {
+    if (!selectedEdgeId) {
+      return;
+    }
+    if (!visibleEdges.some((item) => item.id === selectedEdgeId)) {
+      setSelectedEdgeId("");
+    }
+  }, [visibleEdges, selectedEdgeId]);
 
   function setNodeManualPosition(nodeId, x, y) {
     if (!currentParentId) {
@@ -791,6 +938,7 @@ function App() {
       suppressClickRef.current = false;
       return;
     }
+    setSelectedEdgeId("");
     drillInto(moduleId);
   }
 
@@ -877,6 +1025,7 @@ function App() {
     if (!module) {
       return;
     }
+    setSelectedEdgeId("");
 
     if (hasChildren(moduleId)) {
       setCurrentParentId(moduleId);
@@ -902,6 +1051,7 @@ function App() {
     if (!moduleById[moduleId]) {
       return;
     }
+    setSelectedEdgeId("");
     setCurrentParentId(moduleId);
     setSelectedModuleId(moduleId);
   }
@@ -946,13 +1096,24 @@ function App() {
 
   useEffect(() => {
     setZoom(1);
+    setSelectedEdgeId("");
     dragRef.current = null;
     setDraggingNodeId("");
     setHoverCard(null);
   }, [currentParentId]);
 
+  function handleCanvasWheel(event) {
+    if (!event.ctrlKey && !event.metaKey) {
+      return;
+    }
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.08 : 0.92;
+    setZoom((value) => clampZoom(value * factor));
+  }
+
   return (
-    <div className="studio">
+    <div className={`studio ${sidebarHidden ? "sidebar-hidden" : ""}`}>
+      {!sidebarHidden && (
       <aside className="studio-sidebar">
         <header className="brand">
           <h1>ArchSync Studio</h1>
@@ -1087,13 +1248,18 @@ function App() {
           )}
         </section>
       </aside>
+      )}
 
       <main className="studio-main">
         <div className="toolbar">
           <div className="toolbar-left">
-            <button type="button" onClick={() => setZoom((value) => Math.max(0.45, value - 0.1))}>-</button>
+            <button type="button" onClick={() => setSidebarHidden((value) => !value)}>
+              {sidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
+            </button>
+            <button type="button" onClick={() => setZoom((value) => clampZoom(value - 0.1))}>-</button>
             <span>{Math.round(zoom * 100)}%</span>
-            <button type="button" onClick={() => setZoom((value) => Math.min(2.2, value + 0.1))}>+</button>
+            <button type="button" onClick={() => setZoom((value) => clampZoom(value + 0.1))}>+</button>
+            <span className="zoom-hint">Ctrl+Wheel Zoom</span>
             <button type="button" onClick={resetCurrentLayout}>Auto Layout</button>
             <button type="button" onClick={resetAllLayouts}>Reset All</button>
             {edgeKinds.map((kind) => (
@@ -1160,8 +1326,11 @@ function App() {
               <button
                 key={edge.id}
                 type="button"
-                className={`link-row link-${edge.kind}`}
-                onClick={() => setSelectedModuleId(edge.src_id)}
+                className={`link-row link-${edge.kind} ${selectedEdgeId === edge.id ? "active" : ""}`}
+                onClick={() => {
+                  setSelectedModuleId(edge.src_id);
+                  setSelectedEdgeId(edge.id);
+                }}
               >
                 <strong>{edge.srcName}</strong>
                 <span>{humanizeKind(edge.kind)} · {edge.label}</span>
@@ -1170,9 +1339,27 @@ function App() {
             ))}
             {!visibleEdgeRows.length && <p className="empty">No links at current depth.</p>}
           </div>
+          {selectedEdge ? (
+            <aside className={`edge-inspector edge-${selectedEdge.kind}`}>
+              <h4>Selected Link</h4>
+              <p>
+                <strong>{selectedEdge.srcName}</strong> → <strong>{selectedEdge.dstName}</strong>
+              </p>
+              <p>{humanizeKind(selectedEdge.kind)} · {selectedEdge.label}</p>
+              {!!selectedEdge.raw_labels?.length && (
+                <ul>
+                  {selectedEdge.raw_labels.slice(0, 5).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              )}
+            </aside>
+          ) : (
+            <p className="edge-inspector-empty">Click a link or line to inspect details.</p>
+          )}
         </section>
 
-        <section className="canvas-wrap">
+        <section className="canvas-wrap" onWheel={handleCanvasWheel}>
           {!model && <p className="empty">No model loaded yet.</p>}
           {model && (
             <>
@@ -1215,17 +1402,25 @@ function App() {
                 </text>
               )}
 
-              {visibleEdges.map((edge, index) => {
+              {visibleEdges.map((edge) => {
                 const src = drawNodeById[edge.src_id];
                 const dst = drawNodeById[edge.dst_id];
                 if (!src || !dst) {
                   return null;
                 }
 
-                const pairMeta = edgeMetaById[edge.id] || { index: 0, count: 1 };
-                const geometry = edgePath(src, dst, index + edge.id.length, pairMeta.index, pairMeta.count);
-                const selected = selectedIsVisible && (edge.src_id === selectedModuleId || edge.dst_id === selectedModuleId);
-                const dimmed = selectedIsVisible && !selected;
+                const geometry = edgeGeometryById[edge.id];
+                if (!geometry) {
+                  return null;
+                }
+
+                const selectedByEdge = selectedEdgeId === edge.id;
+                const relatedToSelectedModule = selectedIsVisible
+                  && (edge.src_id === selectedModuleId || edge.dst_id === selectedModuleId);
+                const selected = selectedByEdge || (!selectedEdgeId && relatedToSelectedModule);
+                const dimmed = selectedEdgeId
+                  ? edge.id !== selectedEdgeId
+                  : selectedIsVisible && !relatedToSelectedModule;
 
                 const edgeKindClass = ["dependency", "interface", "dependency_file"].includes(edge.kind)
                   ? edge.kind
@@ -1247,12 +1442,31 @@ function App() {
                 const weightWidth = Math.min(1.8, edge.count * 0.22);
 
                 return (
-                  <g key={edge.id}>
+                  <g
+                    key={edge.id}
+                    className="edge-group"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedEdgeId(edge.id);
+                      setSelectedModuleId(edge.src_id);
+                    }}
+                  >
+                    <path
+                      d={geometry.path}
+                      className="edge-hitbox"
+                      markerEnd={marker}
+                    />
                     <path
                       d={geometry.path}
                       className={cls.join(" ")}
                       markerEnd={marker}
-                      style={{ strokeWidth: selected ? baseWidth + 1.4 : baseWidth + weightWidth }}
+                      style={{
+                        strokeWidth: selectedByEdge
+                          ? baseWidth + 2.3
+                          : selected
+                            ? baseWidth + 1.4
+                            : baseWidth + weightWidth,
+                      }}
                     />
                     <text className={`edge-label ${selected ? "selected" : ""}`} x={geometry.labelX} y={geometry.labelY}>
                       {clip(edge.label, 34)}
