@@ -508,27 +508,19 @@ function buildCenterOutOrder(count) {
   return Array.from({ length: count }, (_, index) => index)
     .sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle) || a - b);
 }
-function buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds) {
+function buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds, moduleById = {}) {
   const visibleById = Object.fromEntries((nodes || []).map((item) => [item.id, item]));
   const expandedSet = ensureSet(expandedModuleIds);
   const defs = [];
-  const sorted = [...(nodes || [])].sort((a, b) => (
+  const sorted = Array.from(expandedSet)
+    .map((moduleId) => moduleById[moduleId] || visibleById[moduleId])
+    .filter(Boolean)
+    .sort((a, b) => (
     a.level - b.level
     || `${a.layer}:${a.name}`.localeCompare(`${b.layer}:${b.name}`)
   ));
-  function hasExpandedAncestor(node) {
-    let current = node.parent_id ? visibleById[node.parent_id] : null;
-    while (current) {
-      if (expandedSet.has(current.id)) {
-        return true;
-      }
-      current = current.parent_id ? visibleById[current.parent_id] : null;
-    }
-    return false;
-  }
   for (const node of sorted) {
-    const sameAsLayer = String(node.name || "").trim().toLowerCase() === String(node.layer || "").trim().toLowerCase();
-    if (!expandedSet.has(node.id) || node.level <= 0 || hasExpandedAncestor(node) || sameAsLayer) {
+    if (!expandedSet.has(node.id)) {
       continue;
     }
     const members = new Set();
@@ -568,7 +560,7 @@ function materializeExpandedContainers(containerDefs, nodeById, lanes = []) {
     const members = def.memberIds
       .map((moduleId) => nodeById[moduleId])
       .filter(Boolean);
-    if (members.length <= 1) {
+    if (!members.length) {
       continue;
     }
     const minX = Math.min(...members.map((item) => item.x));
@@ -625,6 +617,7 @@ function layoutGraph(
   summarySourceByModule = {},
   childrenByParent = {},
   expandedModuleIds = new Set(),
+  moduleById = {},
 ) {
   const groups = new Map();
   for (const node of nodes) {
@@ -852,7 +845,7 @@ function layoutGraph(
     maxHeight = Math.max(maxHeight, laneHeight + 110);
   }
   const width = Math.max(640, totalWidth - laneGap + 130);
-  const containerDefs = buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds);
+  const containerDefs = buildExpandedContainerDefs(nodes, childrenByParent, expandedModuleIds, moduleById);
   const nodeById = Object.fromEntries(drawNodes.map((item) => [item.id, item]));
   const moduleContainers = materializeExpandedContainers(containerDefs, nodeById, lanes);
   const sized = boundsWithPadding(
@@ -1426,6 +1419,7 @@ function App() {
       llmSummarySource,
       childrenByParent,
       expandedModuleIds,
+      moduleById,
     ),
     [
       viewGraph.nodes,
@@ -1435,6 +1429,7 @@ function App() {
       llmSummarySource,
       childrenByParent,
       expandedModuleIds,
+      moduleById,
     ],
   );
   const manualPositionsForCurrent = useMemo(
@@ -2663,7 +2658,6 @@ function App() {
                   {(renderLayout.moduleContainers || []).map((container) => {
                     const focused = container.id === currentParentId;
                     const title = clipByUnits(moduleById[container.id]?.name || container.name || container.id, 16);
-                    const sameAsLane = String(container.layer || "").trim().toLowerCase() === String(container.name || "").trim().toLowerCase();
                     const chipWidth = Math.max(68, textUnits(title) * 7 + 18);
                     const chipX = container.x + container.width - chipWidth - 10;
                     const chipY = container.y + 8;
@@ -2677,14 +2671,10 @@ function App() {
                           rx="16"
                           className="module-container-body"
                         />
-                        {!sameAsLane && (
-                          <>
-                            <rect x={chipX} y={chipY} width={chipWidth} height="16" rx="8" className="module-container-chip" />
-                            <text x={chipX + chipWidth / 2} y={chipY + 12} textAnchor="middle" className="module-container-title">
-                              {title}
-                            </text>
-                          </>
-                        )}
+                        <rect x={chipX} y={chipY} width={chipWidth} height="16" rx="8" className="module-container-chip" />
+                        <text x={chipX + chipWidth / 2} y={chipY + 12} textAnchor="middle" className="module-container-title">
+                          {title}
+                        </text>
                       </g>
                     );
                   })}
