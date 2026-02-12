@@ -162,6 +162,10 @@ function buildNodeVisual(node, ports, summaryText, summarySource) {
   };
 }
 
+function nowTimeLabel() {
+  return new Date().toLocaleTimeString([], { hour12: false });
+}
+
 function humanizeKind(kind) {
   return String(kind || "dependency")
     .replaceAll("_", " ")
@@ -803,25 +807,44 @@ function App() {
   const [manualLayouts, setManualLayouts] = useState({});
   const [draggingNodeId, setDraggingNodeId] = useState("");
   const [hoverCard, setHoverCard] = useState(null);
+  const [hoverNodeId, setHoverNodeId] = useState("");
+  const [activePortFocus, setActivePortFocus] = useState(null);
+  const [moduleEdits, setModuleEdits] = useState({});
+  const [dockTab, setDockTab] = useState("console");
+  const [messages, setMessages] = useState([]);
+  const [messageFilters, setMessageFilters] = useState({ info: true, warning: true, error: true });
+  const [logs, setLogs] = useState([]);
+  const [consoleInput, setConsoleInput] = useState("");
+  const [consoleHistory, setConsoleHistory] = useState([]);
+  const [consoleHistoryIndex, setConsoleHistoryIndex] = useState(-1);
 
   const svgRef = useRef(null);
+  const canvasWrapRef = useRef(null);
   const dragRef = useRef(null);
   const suppressClickRef = useRef(false);
 
-  const moduleById = useMemo(() => buildModuleLookup(model?.modules || []), [model]);
-  const childrenByParent = useMemo(() => buildChildrenLookup(model?.modules || []), [model]);
-  const descendantsByModule = useMemo(() => buildDescendantsLookup(model?.modules || []), [model]);
+  const effectiveModules = useMemo(() => {
+    return (model?.modules || []).map((item) => {
+      const edit = moduleEdits[item.id] || {};
+      const name = typeof edit.name === "string" && edit.name.trim() ? edit.name.trim() : item.name;
+      return { ...item, name };
+    });
+  }, [model, moduleEdits]);
+
+  const moduleById = useMemo(() => buildModuleLookup(effectiveModules), [effectiveModules]);
+  const childrenByParent = useMemo(() => buildChildrenLookup(effectiveModules), [effectiveModules]);
+  const descendantsByModule = useMemo(() => buildDescendantsLookup(effectiveModules), [effectiveModules]);
   const evidenceById = useMemo(() => buildEvidenceLookup(snapshot?.evidences || []), [snapshot]);
 
   const systemModule = useMemo(() => {
-    const modules = model?.modules || [];
+    const modules = effectiveModules || [];
     const explicit = modules.find((item) => item.level === 0 && !item.parent_id);
     if (explicit) {
       return explicit;
     }
     const sorted = [...modules].sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
     return sorted[0] || null;
-  }, [model]);
+  }, [effectiveModules]);
 
   const portsByModule = useMemo(() => {
     const output = {};
@@ -835,8 +858,25 @@ function App() {
   }, [model]);
 
   const stats = useMemo(() => summarizeModel(model, snapshot), [model, snapshot]);
-  const llmSummaries = useMemo(() => model?.metadata?.llm_summaries || {}, [model]);
-  const llmSummarySource = useMemo(() => model?.metadata?.llm_summary_source || {}, [model]);
+  const llmSummaries = useMemo(() => {
+    const base = { ...(model?.metadata?.llm_summaries || {}) };
+    for (const [moduleId, edit] of Object.entries(moduleEdits)) {
+      if (typeof edit.summary === "string") {
+        base[moduleId] = edit.summary;
+      }
+    }
+    return base;
+  }, [model, moduleEdits]);
+
+  const llmSummarySource = useMemo(() => {
+    const base = { ...(model?.metadata?.llm_summary_source || {}) };
+    for (const [moduleId, edit] of Object.entries(moduleEdits)) {
+      if (typeof edit.summary === "string") {
+        base[moduleId] = "manual";
+      }
+    }
+    return base;
+  }, [model, moduleEdits]);
 
   const viewGraph = useMemo(
     () => collectViewGraph(model, currentParentId, childrenByParent, moduleById),
@@ -906,13 +946,13 @@ function App() {
 
   const availableLevels = useMemo(() => {
     return Array.from(
-      new Set((model?.modules || []).filter((item) => item.level > 0).map((item) => item.level)),
+      new Set((effectiveModules || []).filter((item) => item.level > 0).map((item) => item.level)),
     ).sort((a, b) => a - b);
-  }, [model]);
+  }, [effectiveModules]);
 
   const filteredModules = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    return (model?.modules || [])
+    return (effectiveModules || [])
       .filter((item) => item.level > 0)
       .filter((item) => levelFilter === "all" || String(item.level) === levelFilter)
       .filter((item) => {
@@ -931,7 +971,7 @@ function App() {
         }
         return `${a.layer}:${a.name}`.localeCompare(`${b.layer}:${b.name}`);
       });
-  }, [model, searchQuery, levelFilter]);
+  }, [effectiveModules, searchQuery, levelFilter]);
 
   const selectedModule = selectedModuleId ? moduleById[selectedModuleId] : null;
 
@@ -1034,6 +1074,63 @@ function App() {
     [visibleEdgeRows, selectedEdgeId],
   );
 
+  const messageCounts = useMemo(() => {
+    const counts = { info: 0, warning: 0, error: 0 };
+    for (const message of messages) {
+      if (counts[message.severity] !== undefined) {
+        counts[message.severity] += 1;
+      }
+    }
+    return counts;
+  }, [messages]);
+
+  const filteredMessages = useMemo(() => {
+    return messages.filter((item) => messageFilters[item.severity] !== false);
+  }, [messages, messageFilters]);
+
+  const hoverContext = useMemo(() => {
+    if (!hoverNodeId) {
+      return { edgeIds: new Set(), neighborIds: new Set() };
+    }
+    const edgeIds = new Set();
+    const neighborIds = new Set();
+    for (const edge of visibleEdges) {
+      if (edge.src_id === hoverNodeId || edge.dst_id === hoverNodeId) {
+        edgeIds.add(edge.id);
+        if (edge.src_id !== hoverNodeId) {
+          neighborIds.add(edge.src_id);
+        }
+        if (edge.dst_id !== hoverNodeId) {
+          neighborIds.add(edge.dst_id);
+        }
+      }
+    }
+    return { edgeIds, neighborIds };
+  }, [hoverNodeId, visibleEdges]);
+
+  function appendLog(text, severity = "info") {
+    const item = {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      time: nowTimeLabel(),
+      severity,
+      text: String(text || ""),
+    };
+    setLogs((old) => [...old.slice(-399), item]);
+  }
+
+  function appendMessage(severity, text, source = "studio") {
+    const normalized = ["info", "warning", "error"].includes(severity) ? severity : "info";
+    const item = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      time: nowTimeLabel(),
+      severity: normalized,
+      source,
+      text: String(text || ""),
+    };
+    setMessages((old) => [...old.slice(-399), item]);
+    appendLog(`${normalized.toUpperCase()} ${item.text}`, normalized);
+  }
+
   useEffect(() => {
     if (!selectedEdgeId) {
       return;
@@ -1042,6 +1139,108 @@ function App() {
       setSelectedEdgeId("");
     }
   }, [visibleEdges, selectedEdgeId]);
+
+  const selectedModuleEdit = selectedModuleId ? (moduleEdits[selectedModuleId] || {}) : {};
+  const selectedParams = Array.isArray(selectedModuleEdit.params) ? selectedModuleEdit.params : [];
+  const candidateDirection = activePortFocus
+    ? (activePortFocus.direction === "in" ? "out" : "in")
+    : "";
+
+  function getPortVisualState(nodeId, port, direction) {
+    if (!activePortFocus) {
+      return "normal";
+    }
+    const portId = port.id || `${direction}-${port.name}-${port.protocol}`;
+    if (activePortFocus.nodeId === nodeId && activePortFocus.portId === portId) {
+      return "active";
+    }
+    const connectable = direction === candidateDirection && activePortFocus.nodeId !== nodeId;
+    return connectable ? "candidate" : "blocked";
+  }
+
+  function patchSelectedModuleEdit(patch) {
+    if (!selectedModuleId) {
+      return;
+    }
+    setModuleEdits((old) => ({
+      ...old,
+      [selectedModuleId]: {
+        ...(old[selectedModuleId] || {}),
+        ...patch,
+      },
+    }));
+  }
+
+  function upsertParam(index, field, value) {
+    if (!selectedModuleId) {
+      return;
+    }
+    setModuleEdits((old) => {
+      const current = old[selectedModuleId] || {};
+      const list = Array.isArray(current.params) ? [...current.params] : [];
+      if (!list[index]) {
+        list[index] = { key: "", value: "" };
+      }
+      list[index] = { ...list[index], [field]: value };
+      return {
+        ...old,
+        [selectedModuleId]: {
+          ...current,
+          params: list,
+        },
+      };
+    });
+  }
+
+  function addParamRow() {
+    if (!selectedModuleId) {
+      return;
+    }
+    setModuleEdits((old) => {
+      const current = old[selectedModuleId] || {};
+      const list = Array.isArray(current.params) ? [...current.params] : [];
+      list.push({ key: "", value: "" });
+      return {
+        ...old,
+        [selectedModuleId]: {
+          ...current,
+          params: list,
+        },
+      };
+    });
+  }
+
+  function removeParamRow(index) {
+    if (!selectedModuleId) {
+      return;
+    }
+    setModuleEdits((old) => {
+      const current = old[selectedModuleId] || {};
+      const list = Array.isArray(current.params) ? [...current.params] : [];
+      list.splice(index, 1);
+      return {
+        ...old,
+        [selectedModuleId]: {
+          ...current,
+          params: list,
+        },
+      };
+    });
+  }
+
+  function resetSelectedModuleOverrides() {
+    if (!selectedModuleId) {
+      return;
+    }
+    setModuleEdits((old) => {
+      if (!old[selectedModuleId]) {
+        return old;
+      }
+      const next = { ...old };
+      delete next[selectedModuleId];
+      return next;
+    });
+  }
 
   function setNodeManualPosition(nodeId, x, y) {
     if (!currentParentId) {
@@ -1075,6 +1274,7 @@ function App() {
   }
 
   function showNodeHover(event, nodeId) {
+    setHoverNodeId(nodeId);
     const summary = llmSummaries[nodeId];
     if (!summary) {
       setHoverCard(null);
@@ -1101,6 +1301,7 @@ function App() {
   }
 
   function hideNodeHover(nodeId) {
+    setHoverNodeId((old) => (old === nodeId ? "" : old));
     setHoverCard((old) => {
       if (!old || old.nodeId !== nodeId) {
         return old;
@@ -1195,6 +1396,7 @@ function App() {
       return;
     }
     setSelectedEdgeId("");
+    setActivePortFocus(null);
     drillInto(moduleId);
   }
 
@@ -1213,8 +1415,11 @@ function App() {
       const response = await fetchModel({ autoBuild });
       setModel(response.model);
       setSnapshot(response.snapshot);
+      appendMessage("info", `Model refreshed (${autoBuild ? "auto build" : "model only"}).`, "refresh");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      appendMessage("error", message, "refresh");
     } finally {
       setBusy((old) => ({ ...old, refresh: false }));
     }
@@ -1226,9 +1431,12 @@ function App() {
     try {
       const response = await buildArchitecture({ full: true });
       setModel(response.model);
+      appendMessage("info", "Build completed.", "build");
       await refreshModel(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      appendMessage("error", message, "build");
     } finally {
       setBusy((old) => ({ ...old, build: false }));
     }
@@ -1240,8 +1448,12 @@ function App() {
     try {
       const response = await diffArchitecture({ base: diffInput.base, head: diffInput.head });
       setDiffReport(response.report);
+      const violations = response.report?.violations?.length || 0;
+      appendMessage(violations ? "warning" : "info", `Diff ready: ${violations} violation(s).`, "diff");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      appendMessage("error", message, "diff");
     } finally {
       setBusy((old) => ({ ...old, diff: false }));
     }
@@ -1253,8 +1465,11 @@ function App() {
     try {
       const response = await runCIGate({ base: diffInput.base, head: diffInput.head, failOn: "high" });
       setCiResult(response);
+      appendMessage(response.ok ? "info" : "error", `CI Gate ${response.ok ? "PASS" : "FAIL"}.`, "ci");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      appendMessage("error", message, "ci");
     } finally {
       setBusy((old) => ({ ...old, ci: false }));
     }
@@ -1282,6 +1497,7 @@ function App() {
       return;
     }
     setSelectedEdgeId("");
+    setActivePortFocus(null);
 
     if (hasChildren(moduleId)) {
       setCurrentParentId(moduleId);
@@ -1308,6 +1524,7 @@ function App() {
       return;
     }
     setSelectedEdgeId("");
+    setActivePortFocus(null);
     setCurrentParentId(moduleId);
     setSelectedModuleId(moduleId);
   }
@@ -1321,13 +1538,16 @@ function App() {
       try {
         await healthCheck();
         setServiceStatus("online");
+        appendMessage("info", "API health check: online.", "health");
       } catch {
         setServiceStatus("offline");
+        appendMessage("warning", "API health check: offline.", "health");
       }
       await refreshModel(true);
     }
 
     bootstrap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1353,10 +1573,107 @@ function App() {
   useEffect(() => {
     setZoom(1);
     setSelectedEdgeId("");
+    setActivePortFocus(null);
+    setHoverNodeId("");
     dragRef.current = null;
     setDraggingNodeId("");
     setHoverCard(null);
   }, [currentParentId]);
+
+  function zoomToFit() {
+    const wrap = canvasWrapRef.current;
+    if (!wrap || !layout.width || !layout.height) {
+      return;
+    }
+    const padding = 28;
+    const fitX = (wrap.clientWidth - padding) / layout.width;
+    const fitY = (wrap.clientHeight - padding) / layout.height;
+    const target = clampZoom(Math.min(fitX, fitY));
+    setZoom(target);
+    appendMessage("info", `Zoom to fit: ${Math.round(target * 100)}%.`, "console");
+  }
+
+  async function runConsoleCommand(rawInput) {
+    const line = String(rawInput || "").trim();
+    if (!line) {
+      return;
+    }
+
+    const [command] = line.split(/\s+/);
+    const cmd = command.toLowerCase();
+    appendLog(`> ${line}`, "info");
+
+    if (cmd === "help") {
+      appendMessage("info", "Commands: help, reload, zoomfit, export, diff", "console");
+      return;
+    }
+    if (cmd === "reload") {
+      await refreshModel(true);
+      return;
+    }
+    if (cmd === "zoomfit") {
+      zoomToFit();
+      return;
+    }
+    if (cmd === "export") {
+      appendMessage("warning", "Export placeholder is not implemented yet.", "console");
+      return;
+    }
+    if (cmd === "diff") {
+      await triggerDiff();
+      return;
+    }
+
+    appendMessage("error", `Unknown command: ${cmd}`, "console");
+  }
+
+  async function submitConsoleInput() {
+    const line = consoleInput.trim();
+    if (!line) {
+      return;
+    }
+    setConsoleHistory((old) => [...old.slice(-199), line]);
+    setConsoleHistoryIndex(-1);
+    setConsoleInput("");
+    await runConsoleCommand(line);
+  }
+
+  function handleConsoleKeyDown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitConsoleInput().catch(() => {});
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!consoleHistory.length) {
+        return;
+      }
+      const nextIndex = consoleHistoryIndex < 0 ? consoleHistory.length - 1 : Math.max(0, consoleHistoryIndex - 1);
+      setConsoleHistoryIndex(nextIndex);
+      setConsoleInput(consoleHistory[nextIndex] || "");
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!consoleHistory.length) {
+        return;
+      }
+      if (consoleHistoryIndex < 0) {
+        return;
+      }
+      const nextIndex = consoleHistoryIndex + 1;
+      if (nextIndex >= consoleHistory.length) {
+        setConsoleHistoryIndex(-1);
+        setConsoleInput("");
+        return;
+      }
+      setConsoleHistoryIndex(nextIndex);
+      setConsoleInput(consoleHistory[nextIndex] || "");
+    }
+  }
 
   function handleCanvasWheel(event) {
     if (!event.ctrlKey && !event.metaKey) {
@@ -1572,64 +1889,81 @@ function App() {
           </div>
         </div>
 
-        <section className="link-strip">
-          <header>
-            <h3>Visible Links</h3>
-            <span>{visibleEdgeRows.length} links</span>
-          </header>
-          <div className="link-strip-list">
-            {visibleEdgeRows.slice(0, 24).map((edge) => (
-              <button
-                key={edge.id}
-                type="button"
-                className={`link-row link-${edge.kind} ${selectedEdgeId === edge.id ? "active" : ""}`}
-                onClick={() => {
-                  setSelectedModuleId(edge.src_id);
-                  setSelectedEdgeId(edge.id);
-                }}
-              >
-                <strong>{edge.srcName}</strong>
-                <span>{humanizeKind(edge.kind)} · {edge.label}</span>
-                <em>{edge.dstName}</em>
-              </button>
-            ))}
-            {!visibleEdgeRows.length && <p className="empty">No links at current depth.</p>}
-          </div>
-          {selectedEdge ? (
-            <aside className={`edge-inspector edge-${selectedEdge.kind}`}>
-              <h4>Selected Link</h4>
-              <p>
-                <strong>{selectedEdge.srcName}</strong> → <strong>{selectedEdge.dstName}</strong>
-              </p>
-              <p>{humanizeKind(selectedEdge.kind)} · {selectedEdge.label}</p>
-              {!!selectedEdge.raw_labels?.length && (
-                <ul>
-                  {selectedEdge.raw_labels.slice(0, 5).map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
+        <div className="workspace-body">
+          <div className="diagram-column">
+            <section className="link-strip">
+              <header>
+                <h3>Visible Links</h3>
+                <span>{visibleEdgeRows.length} links</span>
+              </header>
+              <div className="link-strip-list">
+                {visibleEdgeRows.slice(0, 24).map((edge) => (
+                  <button
+                    key={edge.id}
+                    type="button"
+                    className={`link-row link-${edge.kind} ${selectedEdgeId === edge.id ? "active" : ""}`}
+                    onClick={() => {
+                      setSelectedModuleId(edge.src_id);
+                      setSelectedEdgeId(edge.id);
+                      setActivePortFocus(null);
+                    }}
+                  >
+                    <strong>{edge.srcName}</strong>
+                    <span>{humanizeKind(edge.kind)} · {edge.label}</span>
+                    <em>{edge.dstName}</em>
+                  </button>
+                ))}
+                {!visibleEdgeRows.length && <p className="empty">No links at current depth.</p>}
+              </div>
+              {activePortFocus && (
+                <p className="port-focus-hint">
+                  Port Focus: {activePortFocus.direction.toUpperCase()} on {moduleById[activePortFocus.nodeId]?.name || activePortFocus.nodeId}.
+                  Highlighting connectable {candidateDirection.toUpperCase()} ports.
+                </p>
               )}
-            </aside>
-          ) : (
-            <p className="edge-inspector-empty">Click a link or line to inspect details.</p>
-          )}
-        </section>
+              {selectedEdge ? (
+                <aside className={`edge-inspector edge-${selectedEdge.kind}`}>
+                  <h4>Selected Link</h4>
+                  <p>
+                    <strong>{selectedEdge.srcName}</strong> → <strong>{selectedEdge.dstName}</strong>
+                  </p>
+                  <p>{humanizeKind(selectedEdge.kind)} · {selectedEdge.label}</p>
+                  {!!selectedEdge.raw_labels?.length && (
+                    <ul>
+                      {selectedEdge.raw_labels.slice(0, 5).map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  )}
+                </aside>
+              ) : (
+                <p className="edge-inspector-empty">Click a link or line to inspect details.</p>
+              )}
+            </section>
 
-        <section className="canvas-wrap" onWheel={handleCanvasWheel}>
-          {!model && <p className="empty">No model loaded yet.</p>}
-          {model && (
-            <>
-              <svg
-                ref={svgRef}
-                className="diagram"
-                width={layout.width}
-                height={layout.height}
-                viewBox={`0 0 ${layout.width} ${layout.height}`}
-                style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}
-                onPointerMove={moveNodeDrag}
-                onPointerUp={finishNodeDrag}
-                onPointerCancel={finishNodeDrag}
-              >
+            <section className="canvas-wrap" ref={canvasWrapRef} onWheel={handleCanvasWheel}>
+              {!model && <p className="empty">No model loaded yet.</p>}
+              {model && (
+                <>
+                  <svg
+                    ref={svgRef}
+                    className="diagram"
+                    width={layout.width}
+                    height={layout.height}
+                    viewBox={`0 0 ${layout.width} ${layout.height}`}
+                    style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}
+                    onPointerMove={moveNodeDrag}
+                    onPointerUp={finishNodeDrag}
+                    onPointerCancel={finishNodeDrag}
+                    onPointerLeave={() => {
+                      setHoverNodeId("");
+                      setHoverCard(null);
+                    }}
+                    onClick={() => {
+                      setSelectedEdgeId("");
+                      setActivePortFocus(null);
+                    }}
+                  >
                 <defs>
                   <marker
                     id="arrow-dep"
@@ -1677,20 +2011,20 @@ function App() {
                   </marker>
                 </defs>
 
-              {layout.lanes.map((lane) => (
-                <g key={lane.layer}>
-                  <rect x={lane.x} y={lane.y} width={lane.width} height={lane.height} rx="18" className="lane" />
-                  <text x={lane.x + 16} y={lane.y + 30} className="lane-title">{lane.layer}</text>
-                </g>
-              ))}
+                  {layout.lanes.map((lane) => (
+                    <g key={lane.layer}>
+                      <rect x={lane.x} y={lane.y} width={lane.width} height={lane.height} rx="18" className="lane" />
+                      <text x={lane.x + 16} y={lane.y + 30} className="lane-title">{lane.layer}</text>
+                    </g>
+                  ))}
 
-              {!visibleEdges.length && (
-                <text x={layout.width / 2} y={58} textAnchor="middle" className="no-edge-note">
-                  No module links at this depth under current filter.
-                </text>
-              )}
+                  {!visibleEdges.length && (
+                    <text x={layout.width / 2} y={58} textAnchor="middle" className="no-edge-note">
+                      No module links at this depth under current filter.
+                    </text>
+                  )}
 
-              {visibleEdges.map((edge) => {
+                  {visibleEdges.map((edge) => {
                 const src = drawNodeById[edge.src_id];
                 const dst = drawNodeById[edge.dst_id];
                 if (!src || !dst) {
@@ -1705,10 +2039,19 @@ function App() {
                 const selectedByEdge = selectedEdgeId === edge.id;
                 const relatedToSelectedModule = selectedIsVisible
                   && (edge.src_id === selectedModuleId || edge.dst_id === selectedModuleId);
-                const selected = selectedByEdge || (!selectedEdgeId && relatedToSelectedModule);
-                const dimmed = selectedEdgeId
-                  ? edge.id !== selectedEdgeId
-                  : selectedIsVisible && !relatedToSelectedModule;
+                const relatedToHover = hoverContext.edgeIds.has(edge.id);
+                const selected = selectedByEdge
+                  || (!selectedEdgeId && relatedToSelectedModule)
+                  || relatedToHover;
+
+                let dimmed = false;
+                if (hoverNodeId) {
+                  dimmed = !relatedToHover;
+                } else if (selectedEdgeId) {
+                  dimmed = edge.id !== selectedEdgeId;
+                } else if (selectedIsVisible) {
+                  dimmed = !relatedToSelectedModule;
+                }
 
                 const edgeKindClass = ["dependency", "interface", "dependency_file"].includes(edge.kind)
                   ? edge.kind
@@ -1734,16 +2077,17 @@ function App() {
                     ? "3 5"
                     : undefined;
 
-                return (
-                  <g
-                    key={edge.id}
-                    className="edge-group"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setSelectedEdgeId(edge.id);
-                      setSelectedModuleId(edge.src_id);
-                    }}
-                  >
+                    return (
+                      <g
+                        key={edge.id}
+                        className="edge-group"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedEdgeId(edge.id);
+                          setSelectedModuleId(edge.src_id);
+                          setActivePortFocus(null);
+                        }}
+                      >
                     <path
                       d={geometry.path}
                       className="edge-hitbox"
@@ -1783,31 +2127,42 @@ function App() {
                     <text className={`edge-label ${selected ? "selected" : ""}`} x={geometry.labelX} y={geometry.labelY}>
                       {clip(edge.label, 34)}
                     </text>
-                  </g>
-                );
-              })}
+                      </g>
+                    );
+                  })}
 
-                {layout.nodes.map((node) => {
+                  {layout.nodes.map((node) => {
                   const isActive = node.id === selectedModuleId;
                   const canDrill = hasChildren(node.id);
+                  const isHoveredNode = hoverNodeId === node.id;
+                  const isNeighborNode = hoverContext.neighborIds.has(node.id);
+                  const dimmedByHover = hoverNodeId && !isHoveredNode && !isNeighborNode;
+                  const nodeClasses = [
+                    "node",
+                    isActive ? "active" : "",
+                    draggingNodeId === node.id ? "dragging" : "",
+                    isHoveredNode ? "hovered" : "",
+                    isNeighborNode ? "neighbor" : "",
+                    dimmedByHover ? "dimmed" : "",
+                  ].filter(Boolean).join(" ");
 
-                  return (
-                    <g
-                      key={node.id}
-                      className={`node ${isActive ? "active" : ""} ${draggingNodeId === node.id ? "dragging" : ""}`}
-                      onClick={() => activateNode(node.id)}
-                      onPointerDown={(event) => startNodeDrag(event, node)}
-                      onPointerEnter={(event) => showNodeHover(event, node.id)}
-                      onPointerMove={(event) => moveNodeHover(event, node.id)}
-                      onPointerLeave={() => hideNodeHover(node.id)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          activateNode(node.id);
-                        }
-                      }}
-                    >
+                    return (
+                      <g
+                        key={node.id}
+                        className={nodeClasses}
+                        onClick={() => activateNode(node.id)}
+                        onPointerDown={(event) => startNodeDrag(event, node)}
+                        onPointerEnter={(event) => showNodeHover(event, node.id)}
+                        onPointerMove={(event) => moveNodeHover(event, node.id)}
+                        onPointerLeave={() => hideNodeHover(node.id)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            activateNode(node.id);
+                          }
+                        }}
+                      >
                       <rect x={node.x} y={node.y} width={node.width} height={node.height} rx="14" className="node-body" />
                       <rect x={node.x + 1} y={node.y + 1} width={node.width - 2} height="30" rx="12" className="node-header" />
                       <text x={node.x + 14} y={node.y + 26} className="title">{clipByUnits(node.name, node.portTextUnits + 1)}</text>
@@ -1829,10 +2184,37 @@ function App() {
                       )}
 
                       {node.displayInPorts.map((port, idx) => (
-                        <g key={`${port.id}-in`}>
-                          <line x1={node.x - 12} y1={node.portStartY + idx * 16 - 4} x2={node.x} y2={node.portStartY + idx * 16 - 4} className="pin-line in" />
-                          <rect x={node.x - 4} y={node.portStartY + idx * 16 - 7} width="6" height="6" className="pin-dot in" />
-                          <text x={node.x + 14} y={node.portStartY + idx * 16} className="port in-port">
+                        <g
+                          key={`${port.id}-in`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            const portId = port.id || `in-${port.name}-${port.protocol}`;
+                            setActivePortFocus((old) => (
+                              old && old.nodeId === node.id && old.portId === portId
+                                ? null
+                                : { nodeId: node.id, portId, direction: "in" }
+                            ));
+                          }}
+                        >
+                          <line
+                            x1={node.x - 12}
+                            y1={node.portStartY + idx * 16 - 4}
+                            x2={node.x}
+                            y2={node.portStartY + idx * 16 - 4}
+                            className={`pin-line in ${getPortVisualState(node.id, port, "in")}`}
+                          />
+                          <rect
+                            x={node.x - 4}
+                            y={node.portStartY + idx * 16 - 7}
+                            width="6"
+                            height="6"
+                            className={`pin-dot in ${getPortVisualState(node.id, port, "in")}`}
+                          />
+                          <text
+                            x={node.x + 14}
+                            y={node.portStartY + idx * 16}
+                            className={`port in-port ${getPortVisualState(node.id, port, "in")}`}
+                          >
                             IN {clipByUnits(formatPortText(port), node.portTextUnits)}
                           </text>
                         </g>
@@ -1847,20 +2229,37 @@ function App() {
                         </text>
                       )}
                       {node.displayOutPorts.map((port, idx) => (
-                        <g key={`${port.id}-out`}>
+                        <g
+                          key={`${port.id}-out`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            const portId = port.id || `out-${port.name}-${port.protocol}`;
+                            setActivePortFocus((old) => (
+                              old && old.nodeId === node.id && old.portId === portId
+                                ? null
+                                : { nodeId: node.id, portId, direction: "out" }
+                            ));
+                          }}
+                        >
                           <line
                             x1={node.x + node.width}
                             y1={node.portStartY + idx * 16 - 4}
                             x2={node.x + node.width + 12}
                             y2={node.portStartY + idx * 16 - 4}
-                            className="pin-line out"
+                            className={`pin-line out ${getPortVisualState(node.id, port, "out")}`}
                           />
-                          <rect x={node.x + node.width - 2} y={node.portStartY + idx * 16 - 7} width="6" height="6" className="pin-dot out" />
+                          <rect
+                            x={node.x + node.width - 2}
+                            y={node.portStartY + idx * 16 - 7}
+                            width="6"
+                            height="6"
+                            className={`pin-dot out ${getPortVisualState(node.id, port, "out")}`}
+                          />
                           <text
                             x={node.x + node.width - 14}
                             y={node.portStartY + idx * 16}
                             textAnchor="end"
-                            className="port out-port"
+                            className={`port out-port ${getPortVisualState(node.id, port, "out")}`}
                           >
                             OUT {clipByUnits(formatPortText(port), node.portTextUnits)}
                           </text>
@@ -1887,54 +2286,177 @@ function App() {
                           click to drill
                         </text>
                       )}
-                    </g>
-                  );
-                })}
-              </svg>
-              {hoverCard && (
-                <aside className="node-hover-card" style={{ left: hoverCard.x, top: hoverCard.y }}>
-                  <h4>{moduleById[hoverCard.nodeId]?.name || hoverCard.nodeId}</h4>
-                  <p>{llmSummaries[hoverCard.nodeId] || ""}</p>
-                  <span className={`source-pill ${llmSummarySource[hoverCard.nodeId] === "llm" ? "llm" : "fallback"}`}>
-                    {llmSummarySource[hoverCard.nodeId] === "llm" ? "Local LLM" : "Fallback"}
-                  </span>
-                </aside>
+                      </g>
+                    );
+                  })}
+                  </svg>
+                  {hoverCard && (
+                    <aside className="node-hover-card" style={{ left: hoverCard.x, top: hoverCard.y }}>
+                      <h4>{moduleById[hoverCard.nodeId]?.name || hoverCard.nodeId}</h4>
+                      <p>{llmSummaries[hoverCard.nodeId] || ""}</p>
+                      <span className={`source-pill ${llmSummarySource[hoverCard.nodeId] === "llm" ? "llm" : "fallback"}`}>
+                        {llmSummarySource[hoverCard.nodeId] === "llm" ? "Local LLM" : "Fallback"}
+                      </span>
+                    </aside>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </section>
+            </section>
+          </div>
 
-        <section className="reports">
-          <article>
-            <h3>Diff Report</h3>
-            {diffReport ? (
-              <ul>
-                <li>Added modules: {diffReport.added_modules?.length || 0}</li>
-                <li>Removed modules: {diffReport.removed_modules?.length || 0}</li>
-                <li>Added ports: {diffReport.added_ports?.length || 0}</li>
-                <li>Removed ports: {diffReport.removed_ports?.length || 0}</li>
-                <li>API surface changes: {diffReport.api_surface_changes?.length || 0}</li>
-                <li>Violations: {diffReport.violations?.length || 0}</li>
-                <li>Cycles: {diffReport.cycles?.length || 0}</li>
-              </ul>
+          <aside className="properties-panel">
+            <header>
+              <h3>Properties</h3>
+              {selectedModule && <span>{selectedModule.layer} · L{selectedModule.level}</span>}
+            </header>
+            {!selectedModule ? (
+              <p className="empty">Select a module to inspect and edit properties.</p>
             ) : (
-              <p>No diff result yet.</p>
-            )}
-          </article>
+              <>
+                <section className="prop-group">
+                  <h4>General</h4>
+                  <label>
+                    Name
+                    <input
+                      value={selectedModule.name}
+                      onChange={(event) => patchSelectedModuleEdit({ name: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Path
+                    <input value={selectedModule.path || "/"} readOnly />
+                  </label>
+                  <label>
+                    Summary
+                    <textarea
+                      value={typeof selectedModuleEdit.summary === "string" ? selectedModuleEdit.summary : selectedModuleSummary}
+                      onChange={(event) => patchSelectedModuleEdit({ summary: event.target.value })}
+                      rows={4}
+                    />
+                  </label>
+                </section>
 
-          <article>
-            <h3>CI Gate</h3>
-            {ciResult ? (
-              <ul>
-                <li>Status: {ciResult.ok ? "PASS" : "FAIL"}</li>
-                <li>Exit code: {ciResult.exit_code}</li>
-                <li>Violations: {ciResult.report?.violations?.length || 0}</li>
-                <li>Cycles: {ciResult.report?.cycles?.length || 0}</li>
-              </ul>
-            ) : (
-              <p>No CI result yet.</p>
+                <section className="prop-group">
+                  <h4>Ports</h4>
+                  <ul className="prop-port-list">
+                    {selectedModulePorts.slice(0, 24).map((port) => (
+                      <li key={port.id}>
+                        <strong>{String(port.direction).toUpperCase()}</strong> {port.protocol} {port.name}
+                      </li>
+                    ))}
+                    {!selectedModulePorts.length && <li>None</li>}
+                  </ul>
+                </section>
+
+                <section className="prop-group">
+                  <h4>Params</h4>
+                  <div className="param-grid">
+                    {selectedParams.map((item, index) => (
+                      <div key={`param-${index}-${item.key}`} className="param-row">
+                        <input
+                          value={item.key || ""}
+                          placeholder="key"
+                          onChange={(event) => upsertParam(index, "key", event.target.value)}
+                        />
+                        <input
+                          value={item.value || ""}
+                          placeholder="value"
+                          onChange={(event) => upsertParam(index, "value", event.target.value)}
+                        />
+                        <button type="button" onClick={() => removeParamRow(index)}>×</button>
+                      </div>
+                    ))}
+                    {!selectedParams.length && <p className="empty">No params yet.</p>}
+                  </div>
+                  <div className="prop-actions">
+                    <button type="button" onClick={addParamRow}>Add Param</button>
+                    <button type="button" onClick={resetSelectedModuleOverrides}>Reset Module</button>
+                  </div>
+                </section>
+              </>
             )}
-          </article>
+          </aside>
+        </div>
+
+        <section className="dock-panel">
+          <div className="dock-tabs">
+            <button type="button" className={dockTab === "console" ? "active" : ""} onClick={() => setDockTab("console")}>
+              Console
+            </button>
+            <button type="button" className={dockTab === "messages" ? "active" : ""} onClick={() => setDockTab("messages")}>
+              Messages
+              <span className="badge-bundle">
+                <b className="badge info">{messageCounts.info}</b>
+                <b className="badge warning">{messageCounts.warning}</b>
+                <b className="badge error">{messageCounts.error}</b>
+              </span>
+            </button>
+            <button type="button" className={dockTab === "log" ? "active" : ""} onClick={() => setDockTab("log")}>
+              Log <span className="badge plain">{logs.length}</span>
+            </button>
+          </div>
+
+          <div className="dock-content">
+            {dockTab === "console" && (
+              <div className="console-tab">
+                <p className="console-hint">Built-in: `help`, `reload`, `zoomfit`, `export`, `diff`</p>
+                <p className="console-meta">
+                  Last Diff: {diffReport ? `${diffReport.violations?.length || 0} violation(s)` : "n/a"} ·
+                  Last CI: {ciResult ? (ciResult.ok ? "PASS" : "FAIL") : "n/a"}
+                </p>
+                <input
+                  className="console-input"
+                  value={consoleInput}
+                  placeholder="Enter command..."
+                  onChange={(event) => setConsoleInput(event.target.value)}
+                  onKeyDown={handleConsoleKeyDown}
+                />
+              </div>
+            )}
+
+            {dockTab === "messages" && (
+              <div className="messages-tab">
+                <div className="severity-filters">
+                  {["info", "warning", "error"].map((severity) => (
+                    <button
+                      key={severity}
+                      type="button"
+                      className={`${messageFilters[severity] !== false ? "active" : ""} severity-${severity}`}
+                      onClick={() => setMessageFilters((old) => ({ ...old, [severity]: !(old[severity] ?? true) }))}
+                    >
+                      {severity.toUpperCase()} <span>{messageCounts[severity]}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="messages-list">
+                  {filteredMessages.map((item) => (
+                    <article key={item.id} className={`message-row severity-${item.severity}`}>
+                      <strong>[{item.severity.toUpperCase()}]</strong>
+                      <span>{item.text}</span>
+                      <em>{item.time}</em>
+                    </article>
+                  ))}
+                  {!filteredMessages.length && <p className="empty">No messages under current filter.</p>}
+                </div>
+              </div>
+            )}
+
+            {dockTab === "log" && (
+              <div className="log-tab">
+                <div className="log-actions">
+                  <button type="button" onClick={() => setLogs([])}>Clear</button>
+                </div>
+                <div className="log-list">
+                  {logs.map((item) => (
+                    <p key={item.id} className={`log-line severity-${item.severity}`}>
+                      <strong>{item.time}</strong> {item.text}
+                    </p>
+                  ))}
+                  {!logs.length && <p className="empty">No logs yet.</p>}
+                </div>
+              </div>
+            )}
+          </div>
         </section>
 
         {error && <div className="error-banner">{error}</div>}
