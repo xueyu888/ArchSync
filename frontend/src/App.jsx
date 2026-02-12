@@ -2487,8 +2487,8 @@ function App() {
               </button>
             </div>
             <div className="edge-scope-toggle" role="group" aria-label="Around selected">
-              <button type="button" onClick={() => setSelectedAroundHops((old) => Math.max(-1, old - 1))} disabled={!selectedInCurrentDepth || selectedAroundHops <= -1}>Remove Around</button>
-              <button type="button" onClick={() => setSelectedAroundHops((old) => Math.min(4, old + 1))} disabled={!selectedInCurrentDepth}>Add Around</button>
+              <button type="button" onClick={() => setSelectedAroundHops((old) => (old <= 1 ? -1 : old - 1))} disabled={!selectedInCurrentDepth || selectedAroundHops <= -1}>Remove Around</button>
+              <button type="button" onClick={() => setSelectedAroundHops((old) => Math.min(4, old < 0 ? 1 : old + 1))} disabled={!selectedInCurrentDepth}>Add Around</button>
             </div>
             {edgeKinds.map((kind) => (
               <span key={kind} className={`legend-item legend-${kind} ${edgeFilters[kind] !== false ? "active" : ""}`}>
