@@ -1,0 +1,16 @@
+default_limits:
+  py: 900
+  js: 1200
+  jsx: 1200
+  ts: 1200
+  tsx: 1200
+  css: 1600
+
+# Temporary debt budget. Keep shrinking these numbers as files are decomposed.
+overrides:
+  frontend/src/App.jsx: 3300
+  frontend/src/App.css: 1800
+  vscode-extension/extension.js: 1500
+
+excluded_dirs:
+  - .VSCodeCounter

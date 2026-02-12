@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  strict-gate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,21 +20,30 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Sync deps
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            vscode-extension/package-lock.json
+
+      - name: Sync engine deps
         working-directory: tools/archsync
         run: uv sync --extra dev
 
-      - name: Install Playwright browser
-        working-directory: tools/archsync
-        run: uv run playwright install --with-deps chromium
+      - name: Sync backend deps
+        working-directory: backend
+        run: uv sync --extra dev
 
-      - name: Lint
-        working-directory: tools/archsync
-        run: uv run ruff check src tests
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
 
-      - name: Test
-        working-directory: tools/archsync
-        run: uv run pytest
+      - name: Install extension deps
+        working-directory: vscode-extension
+        run: npm ci
 
-      - name: Build demo output
-        run: uv run --directory tools/archsync archsync build --repo .
+      - name: Run AGENTS_STRICT gate
+        run: bash scripts/archsync_strict.sh --ci

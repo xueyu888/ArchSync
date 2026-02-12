@@ -30,3 +30,4 @@ vscode-extension/*.vsix
 # Editors
 .idea/
 .vscode/
+.VSCodeCounter/

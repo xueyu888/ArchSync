@@ -119,6 +119,24 @@ npm run lint
 npm run build
 ```
 
+Unified strict gate (matches CI):
+
+```bash
+bash scripts/archsync_strict.sh --full
+```
+
+Install local pre-commit hook:
+
+```bash
+bash scripts/install-git-hooks.sh
+```
+
+Run realtime strict watcher while Codex is editing:
+
+```bash
+bash scripts/archsync_strict_watch.sh
+```
+
 ## License
 
 MIT (`LICENSE`)
