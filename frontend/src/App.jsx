@@ -10,6 +10,158 @@ function clip(text, maxLength) {
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
+function charUnits(ch) {
+  if (!ch) {
+    return 0;
+  }
+  if (/\s/.test(ch)) {
+    return 0.45;
+  }
+  const cp = ch.codePointAt(0) || 0;
+  if (cp <= 0x7f) {
+    return 0.62;
+  }
+  if (cp >= 0x2e80) {
+    return 1;
+  }
+  return 0.82;
+}
+
+function textUnits(text) {
+  return Array.from(String(text || "")).reduce((sum, ch) => sum + charUnits(ch), 0);
+}
+
+function clipByUnits(text, maxUnits) {
+  const source = String(text || "");
+  if (!source || maxUnits <= 0) {
+    return "";
+  }
+  let used = 0;
+  let out = "";
+  for (const ch of Array.from(source)) {
+    const unit = charUnits(ch);
+    if (used + unit > maxUnits) {
+      return `${out.trimEnd()}…`;
+    }
+    out += ch;
+    used += unit;
+  }
+  return out;
+}
+
+function wrapTextByUnits(text, maxUnits, maxLines = 4) {
+  const source = String(text || "").trim();
+  if (!source || maxUnits <= 0 || maxLines <= 0) {
+    return { lines: [], truncated: false };
+  }
+
+  const hardLines = source.split(/\r?\n/);
+  const lines = [];
+  let truncated = false;
+
+  for (const hardLine of hardLines) {
+    if (lines.length >= maxLines) {
+      truncated = true;
+      break;
+    }
+    let current = "";
+    let used = 0;
+    for (const ch of Array.from(hardLine)) {
+      const unit = charUnits(ch);
+      if (used + unit > maxUnits && current) {
+        lines.push(current.trimEnd());
+        if (lines.length >= maxLines) {
+          truncated = true;
+          break;
+        }
+        current = ch;
+        used = unit;
+      } else {
+        current += ch;
+        used += unit;
+      }
+    }
+    if (truncated) {
+      break;
+    }
+    if (current.trim()) {
+      lines.push(current.trimEnd());
+    }
+  }
+
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    truncated = true;
+  }
+
+  if (truncated && lines.length) {
+    lines[lines.length - 1] = clipByUnits(lines[lines.length - 1], Math.max(2, maxUnits - 1));
+  }
+
+  return { lines, truncated };
+}
+
+function formatPortText(port) {
+  return `${port.protocol || ""} ${port.name || ""}`.trim();
+}
+
+function buildNodeVisual(node, ports, summaryText, summarySource) {
+  const inPorts = ports.filter((item) => String(item.direction).toLowerCase() === "in");
+  const outPorts = ports.filter((item) => String(item.direction).toLowerCase() === "out");
+
+  const maxVisiblePorts = 6;
+  const displayInPorts = inPorts.slice(0, maxVisiblePorts);
+  const displayOutPorts = outPorts.slice(0, maxVisiblePorts);
+  const inOverflow = Math.max(0, inPorts.length - displayInPorts.length);
+  const outOverflow = Math.max(0, outPorts.length - displayOutPorts.length);
+
+  const portCandidates = [
+    ...displayInPorts.map((port) => `IN ${formatPortText(port)}`),
+    ...displayOutPorts.map((port) => `OUT ${formatPortText(port)}`),
+    inOverflow ? `IN +${inOverflow} more` : "",
+    outOverflow ? `OUT +${outOverflow} more` : "",
+  ].filter(Boolean);
+
+  const titleUnits = textUnits(node.name);
+  const summaryUnits = textUnits(summaryText);
+  const portUnits = Math.max(0, ...portCandidates.map((item) => textUnits(item)));
+
+  const widthFromTitle = 160 + titleUnits * 5.4;
+  const widthFromPorts = 138 + portUnits * 5.2;
+  const widthFromSummary = summaryText ? 182 + Math.min(220, summaryUnits * 3.2) : 250;
+  const width = Math.round(Math.min(460, Math.max(250, widthFromTitle, widthFromPorts, widthFromSummary)));
+
+  const summaryMaxUnits = Math.max(18, Math.floor((width - 36) / 7.2));
+  const { lines: summaryLines } = wrapTextByUnits(summaryText, summaryMaxUnits, 4);
+  const summaryLineHeight = 14;
+  const summaryBlockHeight = summaryLines.length ? summaryLines.length * summaryLineHeight + 8 : 0;
+
+  const displayInCount = displayInPorts.length + (inOverflow ? 1 : 0);
+  const displayOutCount = displayOutPorts.length + (outOverflow ? 1 : 0);
+  const portRows = Math.max(displayInCount, displayOutCount, 1);
+  const portRowHeight = 16;
+  const portStartOffset = summaryLines.length ? 80 + summaryBlockHeight : 74;
+  const height = Math.round(Math.max(112, portStartOffset + portRows * portRowHeight + 16));
+  const portTextUnits = Math.max(10, Math.floor((width - 54) / 6.4));
+
+  return {
+    width,
+    height,
+    inPorts,
+    outPorts,
+    displayInPorts,
+    displayOutPorts,
+    inOverflow,
+    outOverflow,
+    summary: summaryText,
+    summaryLines,
+    summarySource: summaryText ? (summarySource || "fallback") : "",
+    summaryY: 66,
+    portStartOffset,
+    portTextUnits,
+  };
+}
+
 function humanizeKind(kind) {
   return String(kind || "dependency")
     .replaceAll("_", " ")
@@ -237,14 +389,13 @@ function layoutGraph(nodes, edges, portsByModule, summaryByModule = {}, summaryS
   }
 
   const layers = Array.from(groups.keys());
-  const nodeWidth = 300;
-  const minLaneWidth = 370;
+  const minLaneWidth = 380;
   const laneGap = 96;
   const top = 84;
   const left = 76;
   const laneHeader = 46;
   const lanePadding = 28;
-  const columnGap = 76;
+  const columnGap = 64;
 
   const drawNodes = [];
   const lanes = [];
@@ -256,8 +407,23 @@ function layoutGraph(nodes, edges, portsByModule, summaryByModule = {}, summaryS
     const rawNodes = [...groups.get(layer)];
     const { rank: rawRankById, degree: degreeById, incoming: incomingById } = computeLayerGraphHints(rawNodes, edges);
     const rawMaxRank = Math.max(...Object.values(rawRankById), 0);
+
+    const visualById = {};
+    let maxNodeWidth = 260;
+    for (const node of rawNodes) {
+      const ports = portsByModule[node.id] || [];
+      const summary = (summaryByModule[node.id] || "").trim();
+      const source = summary ? (summarySourceByModule[node.id] || "fallback") : "";
+      const visual = buildNodeVisual(node, ports, summary, source);
+      visualById[node.id] = visual;
+      maxNodeWidth = Math.max(maxNodeWidth, visual.width);
+    }
+
     const columnCount = Math.min(5, Math.max(1, Math.ceil(Math.sqrt(Math.max(1, rawNodes.length) / 2))));
-    const laneWidth = Math.max(minLaneWidth, lanePadding * 2 + columnCount * nodeWidth + (columnCount - 1) * columnGap);
+    const laneWidth = Math.max(
+      minLaneWidth,
+      lanePadding * 2 + columnCount * maxNodeWidth + (columnCount - 1) * columnGap,
+    );
     const laneX = totalWidth;
     totalWidth += laneWidth + laneGap;
 
@@ -324,34 +490,22 @@ function layoutGraph(nodes, edges, portsByModule, summaryByModule = {}, summaryS
     for (let i = 0; i < columnCount; i += 1) {
       const columnNodes = columns[i];
       let cursorY = top + laneHeader + lanePadding;
-      const nodeX = laneX + lanePadding + i * (nodeWidth + columnGap);
+      const columnX = laneX + lanePadding + i * (maxNodeWidth + columnGap);
 
       for (const node of columnNodes) {
-      const ports = portsByModule[node.id] || [];
-      const inPorts = ports.filter((item) => String(item.direction).toLowerCase() === "in");
-      const outPorts = ports.filter((item) => String(item.direction).toLowerCase() === "out");
-      const summary = (summaryByModule[node.id] || "").trim();
-      const summarySource = summary ? (summarySourceByModule[node.id] || "fallback") : "";
-      const portRows = Math.max(Math.min(inPorts.length, 3), Math.min(outPorts.length, 3), 1);
-      const summaryRows = summary ? 1 : 0;
-      const height = 108 + summaryRows * 24 + portRows * 18;
-      const portStartY = summary ? cursorY + 94 : cursorY + 70;
+        const visual = visualById[node.id];
+        const nodeX = columnX + (maxNodeWidth - visual.width) / 2;
 
-      drawNodes.push({
-        ...node,
-        x: nodeX,
-        y: cursorY,
-        width: nodeWidth,
-        height,
-        inPorts,
-        outPorts,
-        summary,
-        summarySource,
-        portStartY,
-      });
+        drawNodes.push({
+          ...node,
+          ...visual,
+          x: nodeX,
+          y: cursorY,
+          portStartY: cursorY + visual.portStartOffset,
+        });
 
-      cursorY += height + 36;
-    }
+        cursorY += visual.height + 34;
+      }
       laneBottom = Math.max(laneBottom, cursorY);
     }
 
@@ -654,8 +808,6 @@ function App() {
   const dragRef = useRef(null);
   const suppressClickRef = useRef(false);
 
-  const layoutScope = model?.metadata?.snapshot_id || model?.commit_id || "default";
-
   const moduleById = useMemo(() => buildModuleLookup(model?.modules || []), [model]);
   const childrenByParent = useMemo(() => buildChildrenLookup(model?.modules || []), [model]);
   const descendantsByModule = useMemo(() => buildDescendantsLookup(model?.modules || []), [model]);
@@ -704,32 +856,6 @@ function App() {
       return next;
     });
   }, [edgeKinds]);
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(`archsync.manualLayouts.${layoutScope}`);
-      if (!raw) {
-        setManualLayouts({});
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        setManualLayouts(parsed);
-        return;
-      }
-      setManualLayouts({});
-    } catch {
-      setManualLayouts({});
-    }
-  }, [layoutScope]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(`archsync.manualLayouts.${layoutScope}`, JSON.stringify(manualLayouts));
-    } catch {
-      // ignore storage errors
-    }
-  }, [layoutScope, manualLayouts]);
 
   useEffect(() => {
     try {
@@ -1684,17 +1810,17 @@ function App() {
                     >
                       <rect x={node.x} y={node.y} width={node.width} height={node.height} rx="14" className="node-body" />
                       <rect x={node.x + 1} y={node.y + 1} width={node.width - 2} height="30" rx="12" className="node-header" />
-                      <text x={node.x + 14} y={node.y + 26} className="title">{clip(node.name, 34)}</text>
+                      <text x={node.x + 14} y={node.y + 26} className="title">{clipByUnits(node.name, node.portTextUnits + 1)}</text>
                       <text x={node.x + 14} y={node.y + 46} className="meta">Layer: {node.layer} · L{node.level}</text>
-                      {node.summary && (
-                        <text x={node.x + 14} y={node.y + 66} className="summary-line">
-                          {clip(node.summary, 20)}
+                      {node.summaryLines.map((line, idx) => (
+                        <text key={`summary-${node.id}-${line}-${idx}`} x={node.x + 14} y={node.y + node.summaryY + idx * 14} className="summary-line">
+                          {line}
                         </text>
-                      )}
-                      {node.summary && (
+                      ))}
+                      {!!node.summaryLines.length && (
                         <text
                           x={node.x + node.width - 14}
-                          y={node.y + 66}
+                          y={node.y + node.summaryY}
                           textAnchor="end"
                           className={`summary-tag ${node.summarySource === "llm" ? "llm" : "fallback"}`}
                         >
@@ -1702,16 +1828,25 @@ function App() {
                         </text>
                       )}
 
-                      {node.inPorts.slice(0, 3).map((port, idx) => (
+                      {node.displayInPorts.map((port, idx) => (
                         <g key={`${port.id}-in`}>
                           <line x1={node.x - 12} y1={node.portStartY + idx * 16 - 4} x2={node.x} y2={node.portStartY + idx * 16 - 4} className="pin-line in" />
                           <rect x={node.x - 4} y={node.portStartY + idx * 16 - 7} width="6" height="6" className="pin-dot in" />
                           <text x={node.x + 14} y={node.portStartY + idx * 16} className="port in-port">
-                            IN {clip(`${port.protocol} ${port.name}`, 22)}
+                            IN {clipByUnits(formatPortText(port), node.portTextUnits)}
                           </text>
                         </g>
                       ))}
-                      {node.outPorts.slice(0, 3).map((port, idx) => (
+                      {node.inOverflow > 0 && (
+                        <text
+                          x={node.x + 14}
+                          y={node.portStartY + node.displayInPorts.length * 16}
+                          className="port in-port more-port"
+                        >
+                          +{node.inOverflow} more
+                        </text>
+                      )}
+                      {node.displayOutPorts.map((port, idx) => (
                         <g key={`${port.id}-out`}>
                           <line
                             x1={node.x + node.width}
@@ -1727,10 +1862,20 @@ function App() {
                             textAnchor="end"
                             className="port out-port"
                           >
-                            OUT {clip(`${port.protocol} ${port.name}`, 22)}
+                            OUT {clipByUnits(formatPortText(port), node.portTextUnits)}
                           </text>
                         </g>
                       ))}
+                      {node.outOverflow > 0 && (
+                        <text
+                          x={node.x + node.width - 14}
+                          y={node.portStartY + node.displayOutPorts.length * 16}
+                          textAnchor="end"
+                          className="port out-port more-port"
+                        >
+                          +{node.outOverflow} more
+                        </text>
+                      )}
 
                       {canDrill && (
                         <text

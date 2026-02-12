@@ -840,6 +840,11 @@ button:disabled {
   font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
 }
 
+.node .more-port {
+  fill: #627488;
+  font-style: italic;
+}
+
 .node .in-port {
   fill: #0f7765;
 }
