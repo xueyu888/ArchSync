@@ -796,6 +796,7 @@ function App() {
   const [zoom, setZoom] = useState(1);
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [selectedEdgeId, setSelectedEdgeId] = useState("");
+  const [showEdgeLabels, setShowEdgeLabels] = useState(true);
 
   const [edgeFilters, setEdgeFilters] = useState({});
 
@@ -901,6 +902,42 @@ function App() {
     try {
       const raw = window.localStorage.getItem("archsync.sidebarHidden");
       setSidebarHidden(raw === "1");
+
+      const savedDockTab = window.localStorage.getItem("archsync.dockTab");
+      if (savedDockTab && ["console", "messages", "log"].includes(savedDockTab)) {
+        setDockTab(savedDockTab);
+      }
+
+      const savedLabelFlag = window.localStorage.getItem("archsync.showEdgeLabels");
+      if (savedLabelFlag === "0") {
+        setShowEdgeLabels(false);
+      }
+
+      const savedZoom = Number(window.localStorage.getItem("archsync.zoom") || "");
+      if (Number.isFinite(savedZoom) && savedZoom > 0) {
+        setZoom(clampZoom(savedZoom));
+      }
+
+      const savedMessageFiltersRaw = window.localStorage.getItem("archsync.messageFilters");
+      if (savedMessageFiltersRaw) {
+        const parsed = JSON.parse(savedMessageFiltersRaw);
+        if (parsed && typeof parsed === "object") {
+          setMessageFilters((old) => ({
+            ...old,
+            info: parsed.info !== false,
+            warning: parsed.warning !== false,
+            error: parsed.error !== false,
+          }));
+        }
+      }
+
+      const savedEdgeFiltersRaw = window.localStorage.getItem("archsync.edgeFilters");
+      if (savedEdgeFiltersRaw) {
+        const parsed = JSON.parse(savedEdgeFiltersRaw);
+        if (parsed && typeof parsed === "object") {
+          setEdgeFilters((old) => ({ ...old, ...parsed }));
+        }
+      }
     } catch {
       setSidebarHidden(false);
     }
@@ -913,6 +950,46 @@ function App() {
       // ignore storage errors
     }
   }, [sidebarHidden]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("archsync.dockTab", dockTab);
+    } catch {
+      // ignore storage errors
+    }
+  }, [dockTab]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("archsync.showEdgeLabels", showEdgeLabels ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
+  }, [showEdgeLabels]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("archsync.zoom", String(zoom));
+    } catch {
+      // ignore storage errors
+    }
+  }, [zoom]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("archsync.messageFilters", JSON.stringify(messageFilters));
+    } catch {
+      // ignore storage errors
+    }
+  }, [messageFilters]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("archsync.edgeFilters", JSON.stringify(edgeFilters));
+    } catch {
+      // ignore storage errors
+    }
+  }, [edgeFilters]);
 
   const visibleEdges = useMemo(
     () => viewGraph.edges.filter((edge) => edgeFilters[edge.kind] !== false),
@@ -1073,6 +1150,7 @@ function App() {
     () => visibleEdgeRows.find((item) => item.id === selectedEdgeId) || null,
     [visibleEdgeRows, selectedEdgeId],
   );
+  const denseLabelMode = visibleEdges.length > 40;
 
   const messageCounts = useMemo(() => {
     const counts = { info: 0, warning: 0, error: 0 };
@@ -1571,7 +1649,6 @@ function App() {
   }, [systemModule, moduleById]);
 
   useEffect(() => {
-    setZoom(1);
     setSelectedEdgeId("");
     setActivePortFocus(null);
     setHoverNodeId("");
@@ -1591,6 +1668,40 @@ function App() {
     const target = clampZoom(Math.min(fitX, fitY));
     setZoom(target);
     appendMessage("info", `Zoom to fit: ${Math.round(target * 100)}%.`, "console");
+  }
+
+  function exportCurrentSvg() {
+    const sourceSvg = svgRef.current;
+    if (!sourceSvg) {
+      appendMessage("error", "No diagram available to export.", "console");
+      return;
+    }
+
+    try {
+      const clone = sourceSvg.cloneNode(true);
+      clone.removeAttribute("style");
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+
+      const serialized = new XMLSerializer().serializeToString(clone);
+      const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().replaceAll(":", "").replaceAll(".", "");
+      const filename = `archsync-depth${currentDepth}-${stamp}.svg`;
+
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.style.display = "none";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+
+      appendMessage("info", `Exported SVG: ${filename}`, "console");
+    } catch (err) {
+      appendMessage("error", `Export failed: ${err instanceof Error ? err.message : String(err)}`, "console");
+    }
   }
 
   async function runConsoleCommand(rawInput) {
@@ -1616,7 +1727,7 @@ function App() {
       return;
     }
     if (cmd === "export") {
-      appendMessage("warning", "Export placeholder is not implemented yet.", "console");
+      exportCurrentSvg();
       return;
     }
     if (cmd === "diff") {
@@ -1832,9 +1943,14 @@ function App() {
             <button type="button" onClick={() => setZoom((value) => clampZoom(value - 0.1))}>-</button>
             <span>{Math.round(zoom * 100)}%</span>
             <button type="button" onClick={() => setZoom((value) => clampZoom(value + 0.1))}>+</button>
+            <button type="button" onClick={zoomToFit}>Zoom Fit</button>
             <span className="zoom-hint">Ctrl+Wheel Zoom</span>
             <button type="button" onClick={resetCurrentLayout}>Auto Layout</button>
             <button type="button" onClick={resetAllLayouts}>Reset All</button>
+            <button type="button" onClick={() => setShowEdgeLabels((old) => !old)}>
+              {showEdgeLabels ? "Hide Labels" : "Show Labels"}
+            </button>
+            <button type="button" onClick={exportCurrentSvg}>Export SVG</button>
             {edgeKinds.map((kind) => (
               <span key={kind} className={`legend-item legend-${kind} ${edgeFilters[kind] !== false ? "active" : ""}`}>
                 {humanizeKind(kind)}
@@ -1894,7 +2010,9 @@ function App() {
             <section className="link-strip">
               <header>
                 <h3>Visible Links</h3>
-                <span>{visibleEdgeRows.length} links</span>
+                <span>
+                  {visibleEdgeRows.length} links · labels {showEdgeLabels ? (denseLabelMode ? "smart" : "on") : "off"}
+                </span>
               </header>
               <div className="link-strip-list">
                 {visibleEdgeRows.slice(0, 24).map((edge) => (
@@ -2043,6 +2161,7 @@ function App() {
                 const selected = selectedByEdge
                   || (!selectedEdgeId && relatedToSelectedModule)
                   || relatedToHover;
+                const showLabel = showEdgeLabels && (!denseLabelMode || selected || selectedByEdge || relatedToHover);
 
                 let dimmed = false;
                 if (hoverNodeId) {
@@ -2124,12 +2243,18 @@ function App() {
                       r={selectedByEdge ? 3.8 : 3}
                       className={`edge-endpoint edge-endpoint-${edgeKindClass} ${selected ? "selected" : ""}`}
                     />
-                    <text className={`edge-label ${selected ? "selected" : ""}`} x={geometry.labelX} y={geometry.labelY}>
-                      {clip(edge.label, 34)}
-                    </text>
-                      </g>
-                    );
-                  })}
+                    {showLabel && (
+                      <text
+                        className={`edge-label ${selected ? "selected" : ""} ${denseLabelMode ? "compact" : ""}`}
+                        x={geometry.labelX}
+                        y={geometry.labelY}
+                      >
+                        {clip(edge.label, denseLabelMode ? 22 : 34)}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
 
                   {layout.nodes.map((node) => {
                   const isActive = node.id === selectedModuleId;

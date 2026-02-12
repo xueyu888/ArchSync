@@ -804,6 +804,11 @@ button:disabled {
   fill: #1f3247;
 }
 
+.edge-label.compact {
+  font-size: 9px;
+  opacity: 0.72;
+}
+
 .edge-endpoint {
   stroke-width: 1.2;
   opacity: 0.9;
