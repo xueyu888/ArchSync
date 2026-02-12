@@ -341,7 +341,7 @@ export function collectSemanticViewGraph(model, focusModuleId, childrenByParent,
   const focusPathIds = focusPath.map((item) => item.id);
   const focusPathIdSet = new Set(focusPathIds);
   const rootId = focusPath[0]?.id || focusModuleId;
-  const visibleIds = new Set();
+  let visibleIds = new Set();
   for (const child of childrenByParent[focusModuleId] || []) {
     visibleIds.add(child.id);
   }
@@ -353,16 +353,28 @@ export function collectSemanticViewGraph(model, focusModuleId, childrenByParent,
   while (changed && pass < 8) {
     changed = false;
     pass += 1;
-    for (const moduleId of expandedSet) {
-      if (!visibleIds.has(moduleId)) {
+    const nextVisible = new Set(visibleIds);
+    for (const moduleId of Array.from(visibleIds)) {
+      if (!expandedSet.has(moduleId)) {
         continue;
       }
-      for (const child of childrenByParent[moduleId] || []) {
-        if (!visibleIds.has(child.id)) {
-          visibleIds.add(child.id);
-          changed = true;
+      const childModules = childrenByParent[moduleId] || [];
+      if (!childModules.length) {
+        continue;
+      }
+      let appended = false;
+      for (const child of childModules) {
+        if (!nextVisible.has(child.id)) {
+          nextVisible.add(child.id);
+          appended = true;
         }
       }
+      if (nextVisible.delete(moduleId) || appended) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      visibleIds = nextVisible;
     }
   }
   const nodes = Array.from(visibleIds)
