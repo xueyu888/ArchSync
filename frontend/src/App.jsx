@@ -1556,14 +1556,19 @@ function App() {
                     const canToggle = container.id !== currentParentId && hasChildren(container.id);
                     const isExpanded = expandedModuleIds.has(container.id);
                     const chipWidth = Math.max(86, studio.textUnits(title) * 7 + (canToggle ? 32 : 16));
-                    const chipX = container.labelX || (container.x + 12);
+                    const chipX = container.labelX ?? 12;
                     const chipY = container.labelY || (container.y + 9);
                     const chipHeight = 18;
                     const toggleX = chipX + chipWidth - 18;
                     const toggleY = chipY + 2;
                     const anchorY = chipY + chipHeight / 2;
                     return (
-                      <g key={`container-${container.id}`} className={`module-container ${focused ? "focused" : ""}`}>
+                      <g
+                        key={`container-${container.id}`}
+                        data-id={container.id}
+                        data-parent-id={container.parentId || ""}
+                        className={`module-container ${focused ? "focused" : ""}`}
+                      >
                         <rect
                           x={container.x}
                           y={container.y}

@@ -1,0 +1,116 @@
+{
+  "crumbs": [
+    "ArchSync System",
+    "Engine"
+  ],
+  "containers": [
+    {
+      "id": "system:ArchSync System",
+      "parentId": "",
+      "label": "ArchSync System · L0",
+      "body": {
+        "x": -10.5,
+        "y": 40,
+        "w": 2661.5,
+        "h": 1104
+      },
+      "chip": {
+        "x": 12,
+        "y": 64,
+        "w": 116.62999999999997,
+        "h": 18
+      }
+    },
+    {
+      "id": "layer:Engine",
+      "parentId": "system:ArchSync System",
+      "label": "Engine · L1",
+      "body": {
+        "x": -0.5,
+        "y": 106,
+        "w": 2517,
+        "h": 990
+      },
+      "chip": {
+        "x": 12,
+        "y": 130,
+        "w": 86,
+        "h": 18
+      }
+    },
+    {
+      "id": "e81a7348dfdd06a9",
+      "parentId": "layer:Engine",
+      "label": "archsync · L2",
+      "body": {
+        "x": 9.5,
+        "y": 116,
+        "w": 2400.5,
+        "h": 868
+      },
+      "chip": {
+        "x": 12,
+        "y": 152,
+        "w": 87.44,
+        "h": 18
+      }
+    },
+    {
+      "id": "ec8d21f48aad4da9",
+      "parentId": "e81a7348dfdd06a9",
+      "label": "src · L3",
+      "body": {
+        "x": 54.5,
+        "y": 126,
+        "w": 2310.5,
+        "h": 770
+      },
+      "chip": {
+        "x": 12,
+        "y": 174,
+        "w": 86,
+        "h": 18
+      }
+    },
+    {
+      "id": "60297f617b2a0379",
+      "parentId": "ec8d21f48aad4da9",
+      "label": "archsync · L4",
+      "body": {
+        "x": 90.5,
+        "y": 136,
+        "w": 2238.5,
+        "h": 696
+      },
+      "chip": {
+        "x": 12,
+        "y": 196,
+        "w": 87.44,
+        "h": 18
+      }
+    },
+    {
+      "id": "96eaa385dee170c4",
+      "parentId": "60297f617b2a0379",
+      "label": "quality · L5",
+      "body": {
+        "x": 117.5,
+        "y": 396,
+        "w": 1040,
+        "h": 346
+      },
+      "chip": {
+        "x": 12,
+        "y": 420,
+        "w": 86,
+        "h": 18
+      }
+    }
+  ],
+  "containmentViolations": [],
+  "labelOverlapPairs": [],
+  "labelNodeOverlap": [],
+  "leftRailValues": [
+    12
+  ]
+}

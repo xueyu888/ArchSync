@@ -167,9 +167,14 @@ export function materializeExpandedContainers(containerDefs, nodeById, lanes = [
     a.level - b.level || (b.width * b.height) - (a.width * a.height)
   ));
   let previousLabelY = Number.NEGATIVE_INFINITY;
-  for (const container of containers) {
-    const targetY = container.y + 9;
-    container.labelX = container.x + 12;
+  const labelsOrdered = [...containers].sort((a, b) => (
+    a.y - b.y
+    || a.level - b.level
+    || a.x - b.x
+  ));
+  for (const container of labelsOrdered) {
+    const targetY = container.y + 24;
+    container.labelX = 12;
     container.labelY = Math.max(targetY, previousLabelY + 22);
     previousLabelY = container.labelY;
   }
