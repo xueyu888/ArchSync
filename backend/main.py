@@ -50,9 +50,20 @@ app.add_middleware(
 
 def _resolve_repo(path_value: str) -> Path:
     raw = Path(path_value)
-    if raw.is_absolute():
-        return raw.resolve()
-    return (REPO_ROOT / raw).resolve()
+    resolved = raw.resolve() if raw.is_absolute() else (REPO_ROOT / raw).resolve()
+
+    try:
+        resolved.relative_to(REPO_ROOT)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"repo_path must stay inside workspace root: {REPO_ROOT}",
+        ) from exc
+
+    if not resolved.exists() or not resolved.is_dir():
+        raise HTTPException(status_code=400, detail=f"repo_path is not a directory: {resolved}")
+
+    return resolved
 
 
 def _run_archsync(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:

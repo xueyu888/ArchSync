@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from pathlib import PurePosixPath
 
 from archsync.config import RulesConfig
-from archsync.llm.provider import ModuleDraft, build_provider
 from archsync.schemas import (
     ArchitectureEdge,
     ArchitectureModel,
@@ -55,13 +53,6 @@ def _is_route_match(source: str, target: str) -> bool:
     source_trim = source.split("?", 1)[0]
     target_trim = target.split("?", 1)[0]
     return source_trim == target_trim
-
-
-CHINESE_RE = re.compile(r"[\u4e00-\u9fff]")
-
-
-def _contains_chinese(text: str) -> bool:
-    return bool(CHINESE_RE.search(text))
 
 
 def _default_summary_for_module(
@@ -119,7 +110,6 @@ def _build_default_summaries(
 def build_architecture_model(
     snapshot: FactsSnapshot,
     rules: RulesConfig,
-    llm_audit_dir,
 ) -> ArchitectureModel:
     system_id = f"system:{rules.system_name}"
     modules: list[ModuleNode] = [
@@ -283,60 +273,25 @@ def build_architecture_model(
                     )
                 )
 
-    provider = build_provider(rules.llm, llm_audit_dir)
     default_summaries = _build_default_summaries(modules=modules, ports=ports, edges=edges)
-
-    enrichables = [
-        ModuleDraft(id=node.id, name=node.name, layer=node.layer, path=node.path)
-        for node in modules
-        if node.level >= 1
-    ]
-    enrichment = provider.enrich(enrichables)
-
-    merged_summaries = dict(default_summaries)
     summary_source = {module_id: "fallback" for module_id in default_summaries}
-    for module_id, summary in enrichment.summaries.items():
-        clean = summary.strip()
-        if not clean:
-            continue
-        if not _contains_chinese(clean):
-            continue
-        merged_summaries[module_id] = clean
-        summary_source[module_id] = "llm"
 
     metadata = {
         "snapshot_id": snapshot.snapshot_id,
         "module_count": len(modules),
         "port_count": len(ports),
         "edge_count": len(edges),
-        "llm_summaries": merged_summaries,
+        "llm_summaries": default_summaries,
         "llm_summary_source": summary_source,
         "coverage": snapshot.metadata.get("coverage", {}),
         "language_breakdown": snapshot.metadata.get("language_breakdown", {}),
     }
 
-    renamed: list[ModuleNode] = []
-    for node in modules:
-        if node.id in enrichment.names:
-            renamed.append(
-                ModuleNode(
-                    id=node.id,
-                    name=enrichment.names[node.id],
-                    layer=node.layer,
-                    level=node.level,
-                    path=node.path,
-                    parent_id=node.parent_id,
-                    evidence_ids=node.evidence_ids,
-                )
-            )
-        else:
-            renamed.append(node)
-
     return ArchitectureModel(
         system_name=rules.system_name,
         commit_id=snapshot.commit_id,
         generated_at=utc_now_iso(),
-        modules=renamed,
+        modules=modules,
         ports=ports,
         edges=edges,
         evidences=snapshot.evidences,

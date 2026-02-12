@@ -7,6 +7,7 @@ from archsync.analyzers.engine import extract_facts
 from archsync.config import RulesConfig
 from archsync.git_utils import current_commit
 from archsync.model.builder import build_architecture_model
+from archsync.model.enrichment import enrich_architecture_model
 from archsync.render.renderer import render_outputs
 from archsync.schemas import ArchitectureModel, FactsSnapshot
 from archsync.storage.sqlite_store import SQLiteStore
@@ -35,8 +36,9 @@ def run_build(
     store = SQLiteStore(state_db)
     store.save_snapshot(snapshot)
 
+    model = build_architecture_model(snapshot=snapshot, rules=rules)
     llm_audit_dir = state_db.parent / "llm_audit"
-    model = build_architecture_model(snapshot=snapshot, rules=rules, llm_audit_dir=llm_audit_dir)
+    model = enrich_architecture_model(model=model, rules=rules, llm_audit_dir=llm_audit_dir)
 
     outputs = render_outputs(
         model=model,

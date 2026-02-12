@@ -8,7 +8,7 @@ default_limits:
 
 # Temporary debt budget. Keep shrinking these numbers as files are decomposed.
 overrides:
-  frontend/src/App.jsx: 3300
+  frontend/src/App.jsx: 2400
   frontend/src/App.css: 1800
   vscode-extension/extension.js: 1500
 

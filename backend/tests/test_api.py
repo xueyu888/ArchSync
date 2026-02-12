@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -33,6 +35,20 @@ def test_health() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
+
+
+def test_resolve_repo_rejects_path_outside_workspace() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        main._resolve_repo("..")
+
+    assert exc_info.value.status_code == 400
+    assert "workspace root" in str(exc_info.value.detail)
+
+
+def test_init_rejects_repo_path_outside_workspace() -> None:
+    response = client.post("/api/archsync/init", params={"repo_path": ".."})
+    assert response.status_code == 400
+    assert "workspace root" in response.json()["detail"]
 
 
 def test_build_and_model(monkeypatch, tmp_path: Path) -> None:
