@@ -183,7 +183,51 @@ function collectViewGraph(model, currentParentId, childrenByParent, moduleById) 
   };
 }
 
-function layoutGraph(nodes, portsByModule, summaryByModule = {}, summarySourceByModule = {}) {
+function computeLayerGraphHints(nodes, edges) {
+  const nodeIds = nodes.map((node) => node.id);
+  const nodeSet = new Set(nodeIds);
+  const incoming = Object.fromEntries(nodeIds.map((id) => [id, []]));
+  const outgoing = Object.fromEntries(nodeIds.map((id) => [id, []]));
+
+  for (const edge of edges || []) {
+    if (!nodeSet.has(edge.src_id) || !nodeSet.has(edge.dst_id) || edge.src_id === edge.dst_id) {
+      continue;
+    }
+    outgoing[edge.src_id].push(edge.dst_id);
+    incoming[edge.dst_id].push(edge.src_id);
+  }
+
+  const rankMemo = {};
+  function rankOf(nodeId, visiting = new Set()) {
+    if (rankMemo[nodeId] !== undefined) {
+      return rankMemo[nodeId];
+    }
+    if (visiting.has(nodeId)) {
+      return 0;
+    }
+    visiting.add(nodeId);
+    let best = 0;
+    for (const prevId of incoming[nodeId]) {
+      best = Math.max(best, rankOf(prevId, visiting) + 1);
+    }
+    visiting.delete(nodeId);
+    rankMemo[nodeId] = best;
+    return best;
+  }
+
+  for (const nodeId of nodeIds) {
+    rankOf(nodeId);
+  }
+
+  const degree = {};
+  for (const nodeId of nodeIds) {
+    degree[nodeId] = incoming[nodeId].length + outgoing[nodeId].length;
+  }
+
+  return { rank: rankMemo, degree, incoming };
+}
+
+function layoutGraph(nodes, edges, portsByModule, summaryByModule = {}, summarySourceByModule = {}) {
   const groups = new Map();
   for (const node of nodes) {
     if (!groups.has(node.layer)) {
@@ -194,24 +238,95 @@ function layoutGraph(nodes, portsByModule, summaryByModule = {}, summarySourceBy
 
   const layers = Array.from(groups.keys());
   const nodeWidth = 300;
-  const laneWidth = 370;
+  const minLaneWidth = 370;
   const laneGap = 96;
   const top = 84;
   const left = 76;
   const laneHeader = 46;
   const lanePadding = 28;
+  const columnGap = 76;
 
   const drawNodes = [];
   const lanes = [];
   let maxHeight = 500;
+  let totalWidth = left;
 
   for (let col = 0; col < layers.length; col += 1) {
     const layer = layers[col];
-    const laneX = left + col * (laneWidth + laneGap);
-    let cursorY = top + laneHeader + lanePadding;
+    const rawNodes = [...groups.get(layer)];
+    const { rank: rawRankById, degree: degreeById, incoming: incomingById } = computeLayerGraphHints(rawNodes, edges);
+    const rawMaxRank = Math.max(...Object.values(rawRankById), 0);
+    const columnCount = Math.min(5, Math.max(1, Math.ceil(Math.sqrt(Math.max(1, rawNodes.length) / 2))));
+    const laneWidth = Math.max(minLaneWidth, lanePadding * 2 + columnCount * nodeWidth + (columnCount - 1) * columnGap);
+    const laneX = totalWidth;
+    totalWidth += laneWidth + laneGap;
 
-    const sorted = [...groups.get(layer)].sort((a, b) => a.name.localeCompare(b.name));
-    for (const node of sorted) {
+    const columns = Array.from({ length: columnCount }, () => []);
+    const preferredColumnById = {};
+    const sortableNodes = [...rawNodes].sort((a, b) => {
+      const rankGap = (rawRankById[a.id] || 0) - (rawRankById[b.id] || 0);
+      if (rankGap !== 0) {
+        return rankGap;
+      }
+      return (degreeById[b.id] || 0) - (degreeById[a.id] || 0) || a.name.localeCompare(b.name);
+    });
+
+    sortableNodes.forEach((node, index) => {
+      let preferred = 0;
+      if (columnCount > 1) {
+        if (rawMaxRank > 0) {
+          preferred = Math.round(((rawRankById[node.id] || 0) / rawMaxRank) * (columnCount - 1));
+        } else {
+          preferred = index % columnCount;
+        }
+      }
+      preferredColumnById[node.id] = preferred;
+
+      let bestColumn = preferred;
+      let bestScore = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < columnCount; i += 1) {
+        const distancePenalty = Math.abs(i - preferred) * 0.8;
+        const occupancyPenalty = columns[i].length;
+        const score = occupancyPenalty + distancePenalty;
+        if (score < bestScore) {
+          bestScore = score;
+          bestColumn = i;
+        }
+      }
+      columns[bestColumn].push(node);
+    });
+
+    const rowIndexById = {};
+    for (let i = 0; i < columnCount; i += 1) {
+      columns[i].sort((a, b) => {
+        function barycenter(node) {
+          const parents = incomingById[node.id] || [];
+          const values = parents
+            .map((parentId) => rowIndexById[parentId])
+            .filter((value) => Number.isFinite(value));
+          if (!values.length) {
+            return preferredColumnById[node.id] * 100 + (degreeById[node.id] || 0) * -1;
+          }
+          return values.reduce((sum, value) => sum + value, 0) / values.length;
+        }
+        const delta = barycenter(a) - barycenter(b);
+        if (Math.abs(delta) > 0.001) {
+          return delta;
+        }
+        return a.name.localeCompare(b.name);
+      });
+      columns[i].forEach((node, row) => {
+        rowIndexById[node.id] = row;
+      });
+    }
+
+    let laneBottom = top + laneHeader + lanePadding;
+    for (let i = 0; i < columnCount; i += 1) {
+      const columnNodes = columns[i];
+      let cursorY = top + laneHeader + lanePadding;
+      const nodeX = laneX + lanePadding + i * (nodeWidth + columnGap);
+
+      for (const node of columnNodes) {
       const ports = portsByModule[node.id] || [];
       const inPorts = ports.filter((item) => String(item.direction).toLowerCase() === "in");
       const outPorts = ports.filter((item) => String(item.direction).toLowerCase() === "out");
@@ -224,7 +339,7 @@ function layoutGraph(nodes, portsByModule, summaryByModule = {}, summarySourceBy
 
       drawNodes.push({
         ...node,
-        x: laneX + (laneWidth - nodeWidth) / 2,
+        x: nodeX,
         y: cursorY,
         width: nodeWidth,
         height,
@@ -237,8 +352,10 @@ function layoutGraph(nodes, portsByModule, summaryByModule = {}, summarySourceBy
 
       cursorY += height + 36;
     }
+      laneBottom = Math.max(laneBottom, cursorY);
+    }
 
-    const laneHeight = Math.max(430, cursorY - top + lanePadding);
+    const laneHeight = Math.max(430, laneBottom - top + lanePadding);
     lanes.push({
       layer,
       x: laneX,
@@ -249,7 +366,7 @@ function layoutGraph(nodes, portsByModule, summaryByModule = {}, summarySourceBy
     maxHeight = Math.max(maxHeight, laneHeight + 110);
   }
 
-  const width = left + Math.max(1, layers.length) * laneWidth + Math.max(0, layers.length - 1) * laneGap + 130;
+  const width = Math.max(640, totalWidth - laneGap + 130);
   return {
     width,
     height: maxHeight,
@@ -637,8 +754,8 @@ function App() {
   );
 
   const autoLayout = useMemo(
-    () => layoutGraph(viewGraph.nodes, portsByModule, llmSummaries, llmSummarySource),
-    [viewGraph.nodes, portsByModule, llmSummaries, llmSummarySource],
+    () => layoutGraph(viewGraph.nodes, visibleEdges, portsByModule, llmSummaries, llmSummarySource),
+    [viewGraph.nodes, visibleEdges, portsByModule, llmSummaries, llmSummarySource],
   );
 
   const manualPositionsForCurrent = useMemo(
@@ -1388,17 +1505,49 @@ function App() {
                 onPointerCancel={finishNodeDrag}
               >
                 <defs>
-                  <marker id="arrow-dep" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
-                    <polygon points="0,0 9,3.5 0,7" fill="#2c3948" />
+                  <marker
+                    id="arrow-dep"
+                    markerWidth="7"
+                    markerHeight="6"
+                    refX="6.2"
+                    refY="3"
+                    orient="auto"
+                    markerUnits="userSpaceOnUse"
+                  >
+                    <polygon points="0,0 7,3 0,6" fill="#2c3948" />
                   </marker>
-                  <marker id="arrow-intf" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
-                    <polygon points="0,0 9,3.5 0,7" fill="#2f6fa5" />
+                  <marker
+                    id="arrow-intf"
+                    markerWidth="7"
+                    markerHeight="6"
+                    refX="6.2"
+                    refY="3"
+                    orient="auto"
+                    markerUnits="userSpaceOnUse"
+                  >
+                    <polygon points="0,0 7,3 0,6" fill="#2f6fa5" />
                   </marker>
-                  <marker id="arrow-file" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
-                    <polygon points="0,0 9,3.5 0,7" fill="#b56f1f" />
+                  <marker
+                    id="arrow-file"
+                    markerWidth="7"
+                    markerHeight="6"
+                    refX="6.2"
+                    refY="3"
+                    orient="auto"
+                    markerUnits="userSpaceOnUse"
+                  >
+                    <polygon points="0,0 7,3 0,6" fill="#b56f1f" />
                   </marker>
-                  <marker id="arrow-other" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
-                    <polygon points="0,0 9,3.5 0,7" fill="#5f6c7b" />
+                  <marker
+                    id="arrow-other"
+                    markerWidth="7"
+                    markerHeight="6"
+                    refX="6.2"
+                    refY="3"
+                    orient="auto"
+                    markerUnits="userSpaceOnUse"
+                  >
+                    <polygon points="0,0 7,3 0,6" fill="#5f6c7b" />
                   </marker>
                 </defs>
 
