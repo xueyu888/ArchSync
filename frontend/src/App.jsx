@@ -1551,10 +1551,17 @@ function App() {
                   ))}
                   {(renderLayout.moduleContainers || []).map((container) => {
                     const focused = container.id === currentParentId;
-                    const title = studio.clipByUnits(moduleById[container.id]?.name || container.name || container.id, 16);
-                    const chipWidth = Math.max(68, studio.textUnits(title) * 7 + 18);
-                    const chipX = container.x + container.width - chipWidth - 10;
-                    const chipY = container.y + 8;
+                    const rawTitle = `${moduleById[container.id]?.name || container.name || container.id} · L${container.level}`;
+                    const title = studio.clipByUnits(rawTitle, 20);
+                    const canToggle = container.id !== currentParentId && hasChildren(container.id);
+                    const isExpanded = expandedModuleIds.has(container.id);
+                    const chipWidth = Math.max(86, studio.textUnits(title) * 7 + (canToggle ? 32 : 16));
+                    const chipX = container.labelX || (container.x + 12);
+                    const chipY = container.labelY || (container.y + 9);
+                    const chipHeight = 18;
+                    const toggleX = chipX + chipWidth - 18;
+                    const toggleY = chipY + 2;
+                    const anchorY = chipY + chipHeight / 2;
                     return (
                       <g key={`container-${container.id}`} className={`module-container ${focused ? "focused" : ""}`}>
                         <rect
@@ -1565,10 +1572,31 @@ function App() {
                           rx="16"
                           className="module-container-body"
                         />
-                        <rect x={chipX} y={chipY} width={chipWidth} height="16" rx="8" className="module-container-chip" />
-                        <text x={chipX + chipWidth / 2} y={chipY + 12} textAnchor="middle" className="module-container-title">
+                        <line
+                          x1={chipX + chipWidth}
+                          y1={anchorY}
+                          x2={container.x + 10}
+                          y2={anchorY}
+                          className="module-container-link"
+                        />
+                        <rect x={chipX} y={chipY} width={chipWidth} height={chipHeight} rx="9" className="module-container-chip" />
+                        <text x={chipX + 8} y={chipY + 13} textAnchor="start" className="module-container-title">
                           {title}
                         </text>
+                        {canToggle && (
+                          <g
+                            className="module-container-toggle"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleModuleExpand(container.id);
+                            }}
+                          >
+                            <rect x={toggleX} y={toggleY} width="14" height="14" rx="7" className="module-container-toggle-bg" />
+                            <text x={toggleX + 7} y={toggleY + 10} textAnchor="middle" className="module-container-toggle-text">
+                              {isExpanded ? "-" : "+"}
+                            </text>
+                          </g>
+                        )}
                       </g>
                     );
                   })}

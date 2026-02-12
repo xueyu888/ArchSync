@@ -1,3 +1,10 @@
+import {
+  buildExpandedContainerDefs,
+  materializeExpandedContainers,
+} from "./container-layout";
+
+export { buildExpandedContainerDefs, materializeExpandedContainers };
+
 export function clip(text, maxLength) {
   if (!text) {
     return "";
@@ -513,127 +520,6 @@ export function buildCenterOutOrder(count) {
   const middle = (count - 1) / 2;
   return Array.from({ length: count }, (_, index) => index)
     .sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle) || a - b);
-}
-export function buildExpandedContainerDefs(nodes, focusPathIds, moduleById = {}, expandedModuleIds = [], selectedModuleId = "") {
-  const visibleNodes = nodes || [];
-  const visibleById = Object.fromEntries(visibleNodes.map((item) => [item.id, item]));
-  if (!visibleNodes.length) {
-    return [];
-  }
-  const candidateIds = new Set();
-  function includeLineage(moduleId) {
-    let current = moduleById[moduleId] || visibleById[moduleId] || null;
-    while (current) {
-      candidateIds.add(current.id);
-      if (!current.parent_id) {
-        break;
-      }
-      current = moduleById[current.parent_id] || null;
-    }
-  }
-  for (const moduleId of focusPathIds || []) {
-    includeLineage(moduleId);
-  }
-  for (const moduleId of expandedModuleIds || []) {
-    includeLineage(moduleId);
-  }
-  if (selectedModuleId) {
-    includeLineage(selectedModuleId);
-  }
-  const ancestryByNodeId = {};
-  for (const node of visibleNodes) {
-    const chain = new Set();
-    let current = moduleById[node.id] || node;
-    while (current) {
-      chain.add(current.id);
-      if (!current.parent_id) {
-        break;
-      }
-      current = moduleById[current.parent_id] || null;
-    }
-    ancestryByNodeId[node.id] = chain;
-  }
-  const fallbackFocusId = focusPathIds?.length ? focusPathIds[focusPathIds.length - 1] : "";
-  const defs = [];
-  for (const moduleId of candidateIds) {
-    const node = moduleById[moduleId] || visibleById[moduleId];
-    if (!node) {
-      continue;
-    }
-    let memberIds = visibleNodes
-      .filter((item) => item.id !== moduleId && ancestryByNodeId[item.id]?.has(moduleId))
-      .map((item) => item.id);
-    const directVisibleChildren = visibleNodes
-      .filter((item) => item.parent_id === moduleId)
-      .map((item) => item.id);
-    if (!memberIds.length && directVisibleChildren.length) {
-      memberIds = directVisibleChildren;
-    }
-    if (!memberIds.length && moduleId === fallbackFocusId && visibleById[moduleId]) {
-      memberIds = [moduleId];
-    }
-    if (!memberIds.length) {
-      continue;
-    }
-    defs.push({
-      id: node.id,
-      name: node.name,
-      layer: node.layer,
-      level: node.level,
-      memberIds,
-    });
-  }
-  return defs.sort((a, b) => (
-    a.level - b.level
-    || `${a.layer}:${a.name}`.localeCompare(`${b.layer}:${b.name}`)
-  ));
-}
-export function materializeExpandedContainers(containerDefs, nodeById, lanes = []) {
-  const laneByLayer = Object.fromEntries((lanes || []).map((lane) => [lane.layer, lane]));
-  const defs = containerDefs || [];
-  if (!defs.length) {
-    return [];
-  }
-  const maxLevel = Math.max(...defs.map((def) => Number(def.level) || 0));
-  const containers = [];
-  for (const def of defs) {
-    const members = def.memberIds
-      .map((moduleId) => nodeById[moduleId])
-      .filter(Boolean);
-    if (!members.length) {
-      continue;
-    }
-    const minX = Math.min(...members.map((item) => item.x));
-    const maxX = Math.max(...members.map((item) => item.x + item.width));
-    const minY = Math.min(...members.map((item) => item.y));
-    const maxY = Math.max(...members.map((item) => item.y + item.height));
-    const depthPad = Math.max(0, maxLevel - (Number(def.level) || 0));
-    const padX = 20 + Math.min(48, depthPad * 8);
-    const padTop = 28 + Math.min(42, depthPad * 8);
-    const padBottom = 18 + Math.min(30, depthPad * 6);
-    const lane = laneByLayer[def.layer];
-    const laneTopMin = lane ? lane.y + 44 : 8;
-    const x = Math.max(8, minX - padX);
-    const y = Math.max(laneTopMin, minY - padTop);
-    const width = Math.max(220, maxX - minX + padX * 2);
-    const height = Math.max(160, maxY - minY + padTop + padBottom);
-    const box = {
-      id: def.id,
-      name: def.name,
-      layer: def.layer,
-      level: def.level,
-      x,
-      y,
-      width,
-      height,
-      memberCount: members.length,
-    };
-    containers.push(box);
-  }
-  return containers.sort((a, b) => (
-    a.level - b.level
-    || (b.width * b.height) - (a.width * a.height)
-  ));
 }
 export function boundsWithPadding(layout, nodes, lanes, moduleContainers) {
   const candidates = [
