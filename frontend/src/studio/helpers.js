@@ -1,7 +1,7 @@
 import {
   buildExpandedContainerDefs,
   materializeExpandedContainers,
-} from "./container-layout";
+} from "./container-layout.js";
 
 export { buildExpandedContainerDefs, materializeExpandedContainers };
 
@@ -642,262 +642,435 @@ export function layoutGraph(
   expandedModuleIds = [],
   selectedModuleId = "",
 ) {
-  const groups = new Map();
-  for (const node of nodes) {
-    if (!groups.has(node.layer)) {
-      groups.set(node.layer, []);
-    }
-    groups.get(node.layer).push(node);
-  }
-  const layers = Array.from(groups.keys());
-  const minLaneWidth = 380;
-  const laneGap = 96;
   const top = 84;
   const left = 76;
-  const laneHeader = 58;
-  const lanePadding = 28;
-  const columnGap = 64;
-  const drawNodes = [];
-  const lanes = [];
-  let maxHeight = 500;
-  let totalWidth = left;
-  for (let col = 0; col < layers.length; col += 1) {
-    const layer = layers[col];
-    const rawNodes = [...groups.get(layer)];
-    const {
-      rank: rawRankById,
-      degree: degreeById,
-      incoming: incomingById,
-      outgoing: outgoingById,
-    } = computeLayerGraphHints(rawNodes, edges);
-    const visualById = {};
-    let maxNodeWidth = 260;
-    for (const node of rawNodes) {
-      const ports = portsByModule[node.id] || [];
-      const summary = (summaryByModule[node.id] || "").trim();
-      const source = summary ? (summarySourceByModule[node.id] || "fallback") : "";
-      const visual = buildNodeVisual(node, ports, summary, source);
-      visualById[node.id] = visual;
-      maxNodeWidth = Math.max(maxNodeWidth, visual.width);
-    }
-    const rankLevels = Array.from(new Set(rawNodes.map((node) => rawRankById[node.id] || 0))).sort((a, b) => a - b);
-    const informativeRanks = rankLevels.length > 1;
-    const densityColumnCount = Math.min(5, Math.max(2, Math.ceil(Math.sqrt(Math.max(1, rawNodes.length) / 2))));
-    const columnCount = informativeRanks
-      ? Math.min(6, rankLevels.length)
-      : (rawNodes.length <= 4 ? 1 : densityColumnCount);
-    const rankColumnByValue = {};
-    if (informativeRanks) {
-      const maxRankIndex = Math.max(1, rankLevels.length - 1);
-      const maxColumnIndex = Math.max(1, columnCount - 1);
-      rankLevels.forEach((rankValue, rankIndex) => {
-        rankColumnByValue[rankValue] = Math.round((rankIndex / maxRankIndex) * maxColumnIndex);
-      });
-    }
-    const laneWidth = Math.max(
-      minLaneWidth,
-      lanePadding * 2 + columnCount * maxNodeWidth + (columnCount - 1) * columnGap,
-    );
-    const laneX = totalWidth;
-    totalWidth += laneWidth + laneGap;
-    const columns = Array.from({ length: columnCount }, () => []);
-    const preferredColumnById = {};
-    const centerOutOrder = buildCenterOutOrder(columnCount);
-    const sortableNodes = [...rawNodes].sort((a, b) => {
-      const rankGap = informativeRanks
-        ? ((rawRankById[a.id] || 0) - (rawRankById[b.id] || 0))
-        : 0;
-      if (rankGap !== 0) {
-        return rankGap;
-      }
-      return (degreeById[b.id] || 0) - (degreeById[a.id] || 0) || a.name.localeCompare(b.name);
-    });
-    sortableNodes.forEach((node, index) => {
-      let preferred = 0;
-      if (columnCount > 1) {
-        if (informativeRanks) {
-          preferred = rankColumnByValue[rawRankById[node.id] || 0] || 0;
-        } else {
-          preferred = centerOutOrder[index % centerOutOrder.length];
-        }
-      }
-      preferredColumnById[node.id] = preferred;
-      let bestColumn = preferred;
-      let bestScore = Number.POSITIVE_INFINITY;
-      const linkedColumns = [...(incomingById[node.id] || []), ...(outgoingById[node.id] || [])]
-        .map((neighborId) => preferredColumnById[neighborId])
-        .filter(Number.isFinite);
-      for (let i = 0; i < columnCount; i += 1) {
-        const distancePenalty = Math.abs(i - preferred) * 0.8;
-        const occupancyPenalty = columns[i].length * 1.05;
-        const relationPenalty = linkedColumns.length
-          ? linkedColumns.reduce((sum, columnIndex) => sum + Math.abs(i - columnIndex), 0) / linkedColumns.length
-          : 0;
-        const score = occupancyPenalty + distancePenalty + relationPenalty * 0.65;
-        if (score < bestScore) {
-          bestScore = score;
-          bestColumn = i;
-        }
-      }
-      columns[bestColumn].push(node);
-    });
-    const columnByNodeId = {};
-    columns.forEach((columnNodes, columnIndex) => {
-      columnNodes.forEach((node) => {
-        columnByNodeId[node.id] = columnIndex;
-      });
-    });
-    const rowIndexById = {};
-    function refreshRowIndex() {
-      columns.forEach((columnNodes) => {
-        columnNodes.forEach((node, rowIndex) => {
-          rowIndexById[node.id] = rowIndex;
-        });
-      });
-    }
-    function barycenter(nodeId, direction) {
-      const currentColumn = columnByNodeId[nodeId];
-      const linked = direction === "incoming"
-        ? (incomingById[nodeId] || [])
-        : direction === "outgoing"
-          ? (outgoingById[nodeId] || [])
-          : [...(incomingById[nodeId] || []), ...(outgoingById[nodeId] || [])];
-      const values = linked
-        .filter((neighborId) => {
-          const neighborColumn = columnByNodeId[neighborId];
-          if (!Number.isFinite(neighborColumn)) {
-            return false;
-          }
-          if (direction === "incoming") {
-            return neighborColumn <= currentColumn;
-          }
-          if (direction === "outgoing") {
-            return neighborColumn >= currentColumn;
-          }
-          return true;
-        })
-        .map((neighborId) => rowIndexById[neighborId])
-        .filter(Number.isFinite);
-      if (!values.length) {
-        return Number.NaN;
-      }
-      return values.reduce((sum, value) => sum + value, 0) / values.length;
-    }
-    refreshRowIndex();
-    if (columnCount > 1) {
-      for (let pass = 0; pass < 3; pass += 1) {
-        for (let i = 1; i < columnCount; i += 1) {
-          columns[i].sort((a, b) => {
-            const aBary = barycenter(a.id, "incoming");
-            const bBary = barycenter(b.id, "incoming");
-            const aHasBary = Number.isFinite(aBary);
-            const bHasBary = Number.isFinite(bBary);
-            if (aHasBary && bHasBary && Math.abs(aBary - bBary) > 0.001) {
-              return aBary - bBary;
-            }
-            if (aHasBary !== bHasBary) {
-              return aHasBary ? -1 : 1;
-            }
-            const degreeGap = (degreeById[b.id] || 0) - (degreeById[a.id] || 0);
-            if (degreeGap !== 0) {
-              return degreeGap;
-            }
-            return a.name.localeCompare(b.name);
-          });
-          refreshRowIndex();
-        }
-        for (let i = columnCount - 2; i >= 0; i -= 1) {
-          columns[i].sort((a, b) => {
-            const aBary = barycenter(a.id, "outgoing");
-            const bBary = barycenter(b.id, "outgoing");
-            const aHasBary = Number.isFinite(aBary);
-            const bHasBary = Number.isFinite(bBary);
-            if (aHasBary && bHasBary && Math.abs(aBary - bBary) > 0.001) {
-              return aBary - bBary;
-            }
-            if (aHasBary !== bHasBary) {
-              return aHasBary ? -1 : 1;
-            }
-            const degreeGap = (degreeById[b.id] || 0) - (degreeById[a.id] || 0);
-            if (degreeGap !== 0) {
-              return degreeGap;
-            }
-            return a.name.localeCompare(b.name);
-          });
-          refreshRowIndex();
-        }
-      }
-    }
-    let laneBottom = top + laneHeader + lanePadding;
-    const columnContentHeights = columns.map((columnNodes) => {
-      if (!columnNodes.length) {
-        return 0;
-      }
-      const nodesHeight = columnNodes.reduce((sum, node) => sum + visualById[node.id].height, 0);
-      const gapsHeight = Math.max(0, columnNodes.length - 1) * 34;
-      return nodesHeight + gapsHeight;
-    });
-    const maxColumnContentHeight = Math.max(0, ...columnContentHeights);
-    for (let i = 0; i < columnCount; i += 1) {
-      const columnNodes = columns[i];
-      const verticalOffset = (maxColumnContentHeight - (columnContentHeights[i] || 0)) / 2;
-      let cursorY = top + laneHeader + lanePadding + verticalOffset;
-      const columnX = laneX + lanePadding + i * (maxNodeWidth + columnGap);
-      for (const node of columnNodes) {
-        const visual = visualById[node.id];
-        const nodeX = columnX + (maxNodeWidth - visual.width) / 2;
-        drawNodes.push({
-          ...node,
-          ...visual,
-          x: nodeX,
-          y: cursorY,
-          portStartY: cursorY + visual.portStartOffset,
-        });
-        cursorY += visual.height + 34;
-      }
-      laneBottom = Math.max(laneBottom, cursorY);
-    }
-    const laneHeight = Math.max(430, laneBottom - top + lanePadding);
-    lanes.push({
-      layer,
-      x: laneX,
-      y: top,
-      width: laneWidth,
-      height: laneHeight,
-    });
-    maxHeight = Math.max(maxHeight, laneHeight + 110);
+  const nodeModels = nodes || [];
+  const { degree: degreeById } = computeLayerGraphHints(nodeModels, edges);
+  const visualById = {};
+  for (const node of nodeModels) {
+    const ports = portsByModule[node.id] || [];
+    const summary = (summaryByModule[node.id] || "").trim();
+    const source = summary ? (summarySourceByModule[node.id] || "fallback") : "";
+    visualById[node.id] = buildNodeVisual(node, ports, summary, source);
   }
-  const width = Math.max(640, totalWidth - laneGap + 130);
+
+  const layerOrder = Array.from(new Set(nodeModels.map((node) => node.layer).filter(Boolean)));
+  const layerIndexByName = Object.fromEntries(layerOrder.map((layer, index) => [layer, index]));
+  function layerIndexOf(layerName) {
+    if (layerIndexByName[layerName] !== undefined) {
+      return layerIndexByName[layerName];
+    }
+    const nextIndex = layerOrder.length;
+    layerOrder.push(layerName || "Unknown");
+    layerIndexByName[layerName] = nextIndex;
+    return nextIndex;
+  }
+  function nodeSortRank(nodeId) {
+    return Number(degreeById[nodeId] || 0);
+  }
+  function itemSortKey(item) {
+    return `${item.layerIndex}|${item.kind === "container" ? 0 : 1}|${item.sortName || item.id}`;
+  }
+  function itemKey(item) {
+    return `${item.kind}:${item.id}`;
+  }
+  function packBalancedColumns(items, options = {}) {
+    const gapX = Number(options.gapX || 34);
+    const gapY = Number(options.gapY || 26);
+    const maxColumns = Math.max(1, Number(options.maxColumns || 3));
+    const targetAspect = Number(options.targetAspect || 1.25);
+    if (!items.length) {
+      return { width: 0, height: 0, placements: {} };
+    }
+
+    const sortedItems = [...items].sort((a, b) => {
+      const layerGap = (a.layerIndex || 0) - (b.layerIndex || 0);
+      if (layerGap !== 0) return layerGap;
+      const kindGap = (a.kind === "container" ? 0 : 1) - (b.kind === "container" ? 0 : 1);
+      if (kindGap !== 0) return kindGap;
+      const degreeGap = (b.sortRank || 0) - (a.sortRank || 0);
+      if (degreeGap !== 0) return degreeGap;
+      return (a.sortName || a.id).localeCompare(b.sortName || b.id);
+    });
+
+    let best = null;
+    const columnCap = Math.min(maxColumns, sortedItems.length);
+    for (let columnCount = 1; columnCount <= columnCap; columnCount += 1) {
+      const columns = Array.from({ length: columnCount }, () => []);
+      const columnHeights = Array.from({ length: columnCount }, () => 0);
+
+      for (const item of sortedItems) {
+        let bestColumn = 0;
+        for (let i = 1; i < columnCount; i += 1) {
+          if (columnHeights[i] < columnHeights[bestColumn]) {
+            bestColumn = i;
+          }
+        }
+        const addHeight = columns[bestColumn].length ? item.height + gapY : item.height;
+        columns[bestColumn].push(item);
+        columnHeights[bestColumn] += addHeight;
+      }
+
+      const columnWidths = columns.map((column) => (
+        column.length ? Math.max(...column.map((item) => item.width)) : 0
+      ));
+      const width = columnWidths.reduce((sum, value) => sum + value, 0) + gapX * Math.max(0, columnCount - 1);
+      const height = Math.max(0, ...columnHeights);
+      const aspect = width / Math.max(1, height);
+      const areaPenalty = (width * height) / 1_000_000;
+      const score = Math.abs(aspect - targetAspect) * 2.3 + areaPenalty + columnCount * 0.15;
+
+      const placements = {};
+      let cursorX = 0;
+      columns.forEach((column, columnIndex) => {
+        let cursorY = 0;
+        column.forEach((item) => {
+          placements[itemKey(item)] = { x: cursorX, y: cursorY };
+          cursorY += item.height + gapY;
+        });
+        cursorX += columnWidths[columnIndex] + gapX;
+      });
+
+      if (!best || score < best.score) {
+        best = { score, width, height, placements };
+      }
+    }
+
+    return best || { width: 0, height: 0, placements: {} };
+  }
+  function packItemsByLayer(items, options = {}) {
+    const layerGapX = Number(options.layerGapX || 56);
+    const itemGapX = Number(options.itemGapX || 34);
+    const itemGapY = Number(options.itemGapY || 26);
+    const maxColumnsPerLayer = Math.max(1, Number(options.maxColumnsPerLayer || 3));
+    const targetAspect = Number(options.targetAspect || 1.2);
+    if (!items.length) {
+      return { width: 0, height: 0, placements: {} };
+    }
+    const grouped = new Map();
+    for (const item of items) {
+      const key = Number.isFinite(item.layerIndex) ? item.layerIndex : 0;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key).push(item);
+    }
+    const layerKeys = Array.from(grouped.keys()).sort((a, b) => a - b);
+    const layerLayouts = [];
+    for (const layerKey of layerKeys) {
+      const layerItems = [...grouped.get(layerKey)];
+      layerItems.sort((a, b) => itemSortKey(a).localeCompare(itemSortKey(b)));
+      const packed = packBalancedColumns(layerItems, {
+        gapX: itemGapX,
+        gapY: itemGapY,
+        maxColumns: maxColumnsPerLayer,
+        targetAspect,
+      });
+      layerLayouts.push({ layerKey, packed, items: layerItems });
+    }
+    const contentHeight = Math.max(0, ...layerLayouts.map((entry) => entry.packed.height));
+    let contentWidth = 0;
+    for (let i = 0; i < layerLayouts.length; i += 1) {
+      contentWidth += layerLayouts[i].packed.width;
+      if (i < layerLayouts.length - 1) {
+        contentWidth += layerGapX;
+      }
+    }
+
+    const placements = {};
+    let cursorX = 0;
+    for (const entry of layerLayouts) {
+      const layerOffsetY = (contentHeight - entry.packed.height) / 2;
+      for (const item of entry.items) {
+        const point = entry.packed.placements[itemKey(item)] || { x: 0, y: 0 };
+        placements[itemKey(item)] = {
+          x: cursorX + point.x,
+          y: layerOffsetY + point.y,
+        };
+      }
+      cursorX += entry.packed.width + layerGapX;
+    }
+
+    return {
+      width: Math.max(0, contentWidth),
+      height: Math.max(0, contentHeight),
+      placements,
+    };
+  }
+
   const containerDefs = buildExpandedContainerDefs(
-    nodes,
+    nodeModels,
     focusPathIds,
     moduleById,
     expandedModuleIds,
     selectedModuleId,
   );
-  const nodeById = Object.fromEntries(drawNodes.map((item) => [item.id, item]));
-  const moduleContainers = materializeExpandedContainers(containerDefs, nodeById);
-  const expandedLanes = expandLanesToContain(lanes, moduleContainers);
-  // Expand nested module frames can widen a lane; pack lanes again (Vivado-like) so that they don't overlap.
-  const packed = packLanesHorizontally(expandedLanes, layers, laneGap, left);
-  const shiftByLayer = packed.shiftByLayer || {};
-  const shiftedNodes = drawNodes.map((node) => ({ ...node, x: node.x + (shiftByLayer[node.layer] || 0) }));
-  // Containers like `system:*` span across layers. They must be recomputed after per-layer lane shifts.
-  const shiftedNodeById = Object.fromEntries(shiftedNodes.map((item) => [item.id, item]));
-  const shiftedContainers = materializeExpandedContainers(containerDefs, shiftedNodeById);
-  const normalized = normalizeToPositive(shiftedNodes, packed.lanes, shiftedContainers, 8);
+
+  const defById = Object.fromEntries(containerDefs.map((def) => [def.id, def]));
+  const childContainerIdsByParent = {};
+  for (const def of containerDefs) {
+    if (!def.parentId || !defById[def.parentId]) {
+      continue;
+    }
+    if (!childContainerIdsByParent[def.parentId]) {
+      childContainerIdsByParent[def.parentId] = [];
+    }
+    childContainerIdsByParent[def.parentId].push(def.id);
+  }
+  for (const parentId of Object.keys(childContainerIdsByParent)) {
+    childContainerIdsByParent[parentId].sort((leftId, rightId) => {
+      const leftDef = defById[leftId];
+      const rightDef = defById[rightId];
+      const leftLayer = layerIndexOf(leftDef?.layer);
+      const rightLayer = layerIndexOf(rightDef?.layer);
+      if (leftLayer !== rightLayer) return leftLayer - rightLayer;
+      if ((leftDef?.level || 0) !== (rightDef?.level || 0)) return (leftDef?.level || 0) - (rightDef?.level || 0);
+      return (leftDef?.name || leftId).localeCompare(rightDef?.name || rightId);
+    });
+  }
+
+  const ownerByNodeId = {};
+  const directNodeIdsByContainer = {};
+  const defsByDepth = [...containerDefs].sort((a, b) => (b.level || 0) - (a.level || 0));
+  for (const def of defsByDepth) {
+    for (const nodeId of def.memberIds || []) {
+      if (ownerByNodeId[nodeId]) {
+        continue;
+      }
+      ownerByNodeId[nodeId] = def.id;
+      if (!directNodeIdsByContainer[def.id]) {
+        directNodeIdsByContainer[def.id] = [];
+      }
+      directNodeIdsByContainer[def.id].push(nodeId);
+    }
+  }
+  for (const containerId of Object.keys(directNodeIdsByContainer)) {
+    directNodeIdsByContainer[containerId].sort((leftId, rightId) => {
+      const leftNode = moduleById[leftId];
+      const rightNode = moduleById[rightId];
+      const layerGap = layerIndexOf(leftNode?.layer) - layerIndexOf(rightNode?.layer);
+      if (layerGap !== 0) return layerGap;
+      const degreeGap = nodeSortRank(rightId) - nodeSortRank(leftId);
+      if (degreeGap !== 0) return degreeGap;
+      return (leftNode?.name || leftId).localeCompare(rightNode?.name || rightId);
+    });
+  }
+
+  const containerLayoutById = {};
+  function measureContainer(containerId) {
+    if (containerLayoutById[containerId]) {
+      return containerLayoutById[containerId];
+    }
+
+    const def = defById[containerId];
+    const childContainerIds = childContainerIdsByParent[containerId] || [];
+    const directNodeIds = (directNodeIdsByContainer[containerId] || [])
+      .filter((nodeId) => !!moduleById[nodeId] && !!visualById[nodeId]);
+
+    const childItems = [];
+    for (const childId of childContainerIds) {
+      const childLayout = measureContainer(childId);
+      childItems.push({
+        kind: "container",
+        id: childId,
+        width: childLayout.width,
+        height: childLayout.height,
+        layerIndex: childLayout.layerIndex,
+        sortName: defById[childId]?.name || childId,
+        sortRank: 0,
+      });
+    }
+    for (const nodeId of directNodeIds) {
+      const node = moduleById[nodeId];
+      const visual = visualById[nodeId];
+      childItems.push({
+        kind: "node",
+        id: nodeId,
+        width: visual.width,
+        height: visual.height,
+        layerIndex: layerIndexOf(node.layer),
+        sortName: node.name || nodeId,
+        sortRank: nodeSortRank(nodeId),
+      });
+    }
+
+    const content = packItemsByLayer(childItems, {
+      layerGapX: 52,
+      itemGapX: 30,
+      itemGapY: 26,
+      maxColumnsPerLayer: 3,
+      targetAspect: 1.25,
+    });
+    const padding = { top: 30, right: 24, bottom: 24, left: 28 };
+    const width = Math.max(220, content.width + padding.left + padding.right);
+    const height = Math.max(160, content.height + padding.top + padding.bottom);
+    const layerIndex = childItems.length
+      ? Math.min(...childItems.map((item) => item.layerIndex))
+      : layerIndexOf(def?.layer);
+
+    const placements = {};
+    for (const item of childItems) {
+      const point = content.placements[itemKey(item)] || { x: 0, y: 0 };
+      placements[itemKey(item)] = {
+        x: padding.left + point.x,
+        y: padding.top + point.y,
+      };
+    }
+
+    const layout = {
+      id: containerId,
+      kind: "container",
+      width,
+      height,
+      layerIndex,
+      children: childItems,
+      placements,
+    };
+    containerLayoutById[containerId] = layout;
+    return layout;
+  }
+
+  const rootContainerIds = containerDefs
+    .filter((def) => !def.parentId || !defById[def.parentId])
+    .map((def) => def.id)
+    .sort((leftId, rightId) => {
+      const leftDef = defById[leftId];
+      const rightDef = defById[rightId];
+      const layerGap = layerIndexOf(leftDef?.layer) - layerIndexOf(rightDef?.layer);
+      if (layerGap !== 0) return layerGap;
+      if ((leftDef?.level || 0) !== (rightDef?.level || 0)) return (leftDef?.level || 0) - (rightDef?.level || 0);
+      return (leftDef?.name || leftId).localeCompare(rightDef?.name || rightId);
+    });
+  const nodeIds = nodeModels.map((node) => node.id);
+  const looseNodeIds = nodeIds.filter((nodeId) => !ownerByNodeId[nodeId] && visualById[nodeId]);
+  looseNodeIds.sort((leftId, rightId) => {
+    const leftNode = moduleById[leftId];
+    const rightNode = moduleById[rightId];
+    const layerGap = layerIndexOf(leftNode?.layer) - layerIndexOf(rightNode?.layer);
+    if (layerGap !== 0) return layerGap;
+    const degreeGap = nodeSortRank(rightId) - nodeSortRank(leftId);
+    if (degreeGap !== 0) return degreeGap;
+    return (leftNode?.name || leftId).localeCompare(rightNode?.name || rightId);
+  });
+
+  const rootItems = [];
+  for (const containerId of rootContainerIds) {
+    const measured = measureContainer(containerId);
+    rootItems.push({
+      kind: "container",
+      id: containerId,
+      width: measured.width,
+      height: measured.height,
+      layerIndex: measured.layerIndex,
+      sortName: defById[containerId]?.name || containerId,
+      sortRank: 0,
+    });
+  }
+  for (const nodeId of looseNodeIds) {
+    const node = moduleById[nodeId];
+    const visual = visualById[nodeId];
+    rootItems.push({
+      kind: "node",
+      id: nodeId,
+      width: visual.width,
+      height: visual.height,
+      layerIndex: layerIndexOf(node?.layer),
+      sortName: node?.name || nodeId,
+      sortRank: nodeSortRank(nodeId),
+    });
+  }
+  rootItems.sort((a, b) => itemSortKey(a).localeCompare(itemSortKey(b)));
+  const rootPacked = packItemsByLayer(rootItems, {
+    layerGapX: 108,
+    itemGapX: 48,
+    itemGapY: 48,
+    maxColumnsPerLayer: 4,
+    targetAspect: 1.45,
+  });
+
+  const drawNodes = [];
+  const moduleContainers = [];
+  function placeItem(item, originX, originY) {
+    if (item.kind === "node") {
+      const node = moduleById[item.id];
+      const visual = visualById[item.id];
+      if (!node || !visual) {
+        return;
+      }
+      drawNodes.push({
+        ...node,
+        ...visual,
+        x: originX,
+        y: originY,
+        portStartY: originY + visual.portStartOffset,
+      });
+      return;
+    }
+
+    const def = defById[item.id];
+    const measured = containerLayoutById[item.id];
+    if (!def || !measured) {
+      return;
+    }
+    moduleContainers.push({
+      id: def.id,
+      name: def.name,
+      layer: def.layer,
+      level: def.level,
+      parentId: def.parentId || "",
+      x: originX,
+      y: originY,
+      width: measured.width,
+      height: measured.height,
+      memberCount: (directNodeIdsByContainer[item.id] || []).length,
+    });
+    for (const child of measured.children) {
+      const offset = measured.placements[itemKey(child)] || { x: 0, y: 0 };
+      placeItem(child, originX + offset.x, originY + offset.y);
+    }
+  }
+  for (const item of rootItems) {
+    const offset = rootPacked.placements[itemKey(item)] || { x: 0, y: 0 };
+    placeItem(item, left + offset.x, top + offset.y);
+  }
+
+  const lanes = [];
+  for (const layer of layerOrder) {
+    const members = drawNodes.filter((node) => node.layer === layer);
+    if (!members.length) {
+      continue;
+    }
+    const minX = Math.min(...members.map((node) => node.x)) - 34;
+    const maxX = Math.max(...members.map((node) => node.x + node.width)) + 34;
+    const minY = Math.min(...members.map((node) => node.y)) - 54;
+    const maxY = Math.max(...members.map((node) => node.y + node.height)) + 28;
+    lanes.push({
+      layer,
+      x: Math.max(8, minX),
+      y: Math.max(8, minY),
+      width: Math.max(380, maxX - Math.max(8, minX)),
+      height: Math.max(430, maxY - Math.max(8, minY)),
+    });
+  }
+
+  const layoutWidthHint = Math.max(640, left + rootPacked.width + 180);
+  const layoutHeightHint = Math.max(500, top + rootPacked.height + 140);
+  const normalized = normalizeToPositive(drawNodes, lanes, moduleContainers, 8);
   const sized = boundsWithPadding(
-    { width, height: maxHeight },
+    { width: layoutWidthHint, height: layoutHeightHint },
     normalized.nodes,
     normalized.lanes,
     normalized.moduleContainers,
   );
+  const sortedContainers = [...normalized.moduleContainers].sort((a, b) => (
+    (a.level || 0) - (b.level || 0) || (b.width * b.height) - (a.width * a.height)
+  ));
   return {
     width: sized.width,
     height: sized.height,
     lanes: normalized.lanes,
     containerDefs,
-    moduleContainers: normalized.moduleContainers,
+    moduleContainers: sortedContainers,
     nodes: normalized.nodes,
   };
 }
