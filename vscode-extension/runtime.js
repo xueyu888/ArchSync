@@ -19,6 +19,75 @@ async function isHttpAvailable(url, timeoutMs = 1500) {
   }
 }
 
+function getNewestFileMtimeMs(rootDir) {
+  if (!fs.existsSync(rootDir)) {
+    return 0;
+  }
+
+  const queue = [rootDir];
+  let newestMtimeMs = 0;
+
+  while (queue.length > 0) {
+    const currentDir = queue.shift();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isSymbolicLink()) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        queue.push(entryPath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      try {
+        const mtimeMs = fs.statSync(entryPath).mtimeMs;
+        if (mtimeMs > newestMtimeMs) {
+          newestMtimeMs = mtimeMs;
+        }
+      } catch {
+        // ignore file races while scanning tree
+      }
+    }
+  }
+
+  return newestMtimeMs;
+}
+
+function shouldBuildPreviewFrontend(frontendDir) {
+  const srcDir = path.join(frontendDir, 'src');
+  const distDir = path.join(frontendDir, 'dist');
+  const distIndexPath = path.join(distDir, 'index.html');
+
+  if (!fs.existsSync(distIndexPath)) {
+    return true;
+  }
+  if (!fs.existsSync(srcDir)) {
+    return false;
+  }
+
+  const newestSrcMtimeMs = getNewestFileMtimeMs(srcDir);
+  if (newestSrcMtimeMs === 0) {
+    return false;
+  }
+
+  const newestDistMtimeMs = getNewestFileMtimeMs(distDir);
+  if (newestDistMtimeMs === 0) {
+    return true;
+  }
+
+  return newestSrcMtimeMs > newestDistMtimeMs;
+}
+
 class ArchSyncServiceManager {
   constructor(options) {
     this.root = options.root;
@@ -190,8 +259,8 @@ class ArchSyncServiceManager {
     if (!this.frontendProcess) {
       const frontendDir = path.join(this.root, this.frontendDir);
       if (this.frontendMode === 'preview') {
-        const indexPath = path.join(frontendDir, 'dist', 'index.html');
-        if (!fs.existsSync(indexPath)) {
+        if (shouldBuildPreviewFrontend(frontendDir)) {
+          this.log('frontend dist is missing or stale; running build');
           await this._runOnce(
             this.npmCommand,
             ['--prefix', frontendDir, 'run', 'build'],
@@ -281,4 +350,5 @@ class ArchSyncServiceManager {
 module.exports = {
   ArchSyncServiceManager,
   isHttpAvailable,
+  shouldBuildPreviewFrontend,
 };
