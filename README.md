@@ -1,11 +1,18 @@
 # ArchSync
 
-An interface-first architecture visualization platform for AI-generated code.
+Code in, architecture graph out.
 
 This project itself is primarily generated with AI, and it exists for one reason:
-AI can produce code faster than humans can review it line by line.
+AI can produce code faster than humans can review line by line, and docs quickly lag behind.
 
 Language: **English** | [中文](README.zh-CN.md)
+
+## Core Value (Read This First)
+
+- Code can be modeled as: input -> process -> output.
+- Systems can be modeled as: modules and their compositions.
+- ArchSync turns source code structure into architecture views, so review shifts from reading text to inspecting relationships.
+- When AI output is too fast, reviewers focus on boundaries, dependency direction, interface wiring, and rule violations.
 
 ## Overview
 
@@ -15,17 +22,6 @@ ArchSync includes:
 - `backend`: FastAPI service exposing ArchSync APIs
 - `frontend`: React Studio application for interactive architecture review
 - `vscode-extension`: non-intrusive VS Code plugin (service control + Studio panel)
-
-## Core Value
-
-When AI output grows too fast, code review and docs review both fall behind.
-ArchSync shifts review from raw text to architecture views. Instead of scanning
-thousands of lines, reviewers inspect:
-
-- architecture boundary changes
-- interface/port wiring changes
-- rule violations (cross-layer/forbidden dependencies/cycles)
-- drill-down evidence
 
 ## Run Full Stack
 
