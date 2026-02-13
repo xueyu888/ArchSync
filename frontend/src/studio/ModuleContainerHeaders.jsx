@@ -29,15 +29,17 @@ export function ModuleContainerHeaders({
         const headerX = (container.x || 0) + 10;
         // Keep the header fully inside the container's top padding, otherwise it can overlap the top-most child.
         const headerY = (container.y || 0) + 3;
+        const showToggle = level > 0 && typeof onCollapseContainer === "function";
+        const toggleWidth = 24;
+        const toggleHeight = 14;
+        const minTextPadding = showToggle ? 54 : 36;
         const maxHeaderWidth = Math.max(92, (container.width || 0) - 20);
         const headerWidth = Math.min(
           maxHeaderWidth,
-          Math.max(92, 44 + units * 10.2),
+          Math.max(92, minTextPadding + units * 10.2),
         );
-        const toggleSize = 14;
-        const toggleX = headerX + headerWidth - toggleSize - 6;
-        const toggleY = headerY + (headerHeight - toggleSize) / 2;
-        const showToggle = level > 0 && typeof onCollapseContainer === "function";
+        const toggleX = headerX + headerWidth - toggleWidth - 6;
+        const toggleY = headerY + (headerHeight - toggleHeight) / 2;
         const draggable = typeof onDragContainer === "function";
 
         return (
@@ -79,14 +81,14 @@ export function ModuleContainerHeaders({
                 <rect
                   x={toggleX}
                   y={toggleY}
-                  width={toggleSize}
-                  height={toggleSize}
-                  rx="6"
+                  width={toggleWidth}
+                  height={toggleHeight}
+                  rx="7"
                   className="module-container-toggle-bg hierarchy-chip-toggle-bg"
                 />
                 <text
-                  x={toggleX + toggleSize / 2}
-                  y={toggleY + toggleSize - 4}
+                  x={toggleX + toggleWidth / 2}
+                  y={toggleY + toggleHeight - 4}
                   textAnchor="middle"
                   className="module-container-toggle-text hierarchy-chip-toggle-text"
                 >
