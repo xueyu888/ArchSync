@@ -1,0 +1,44 @@
+{
+  "studioUrl": "http://127.0.0.1:5173/",
+  "startedAt": "2026-02-13T05:55:13.247Z",
+  "screenshots": {
+    "overview": "docs/qa/studio-ui-regression-latest-overview.png",
+    "hierarchy": "docs/qa/studio-ui-regression-latest-hierarchy.png",
+    "stress": "docs/qa/studio-ui-regression-latest-stress.png"
+  },
+  "metrics": {
+    "containerCount": 9,
+    "containmentViolations": [],
+    "headerCount": 7,
+    "headerContainmentViolations": [],
+    "headerPlacementViolations": [],
+    "headerOverlapPairs": [],
+    "headerNodeOverlapPairs": [],
+    "renderedLayerNodes": [],
+    "nonLayerContainerCount": 6
+  },
+  "failures": [],
+  "deepTarget": {
+    "id": "52094ceb6fe5886d",
+    "level": "8",
+    "name": "api.js"
+  },
+  "hierarchy_metrics": {
+    "containerCount": 8,
+    "containmentViolations": [],
+    "headerCount": 7,
+    "headerContainmentViolations": [],
+    "headerPlacementViolations": [],
+    "headerOverlapPairs": [],
+    "headerNodeOverlapPairs": [],
+    "renderedLayerNodes": [],
+    "nonLayerContainerCount": 6
+  },
+  "finishedAt": "2026-02-13T05:55:38.480Z",
+  "sourceReport": "docs/qa/studio-ui-regression-2026-02-13T05-55-12-962Z.json",
+  "sourceScreenshots": {
+    "overview": "docs/qa/studio-ui-regression-2026-02-13T05-55-12-962Z-overview.png",
+    "hierarchy": "docs/qa/studio-ui-regression-2026-02-13T05-55-12-962Z-hierarchy.png",
+    "stress": "docs/qa/studio-ui-regression-2026-02-13T05-55-12-962Z-stress.png"
+  }
+}
