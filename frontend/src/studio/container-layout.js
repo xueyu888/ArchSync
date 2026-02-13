@@ -11,6 +11,7 @@ export function buildExpandedContainerDefs(
     return [];
   }
   const candidateIds = new Set();
+  const isLayerRootId = (moduleId) => String(moduleId || "").startsWith("layer:");
   function includeLineage(moduleId) {
     let current = moduleById[moduleId] || visibleById[moduleId] || null;
     while (current) {
@@ -21,8 +22,8 @@ export function buildExpandedContainerDefs(
       current = moduleById[current.parent_id] || null;
     }
   }
-  // Layer root nodes are rendered as "lanes" in the diagram. Do not generate nested module containers for them,
-  // otherwise the UI shows redundant frames like "Engine inside Engine" which breaks the Vivado-style hierarchy.
+  // Include the full lineage for focus/expanded/selected nodes so we can render strict nested frames (Vivado-like).
+  // Note: layer roots (`layer:*`) are treated as lane frames; we keep them in defs but can render them differently.
   for (const moduleId of focusPathIds || []) includeLineage(moduleId);
   for (const moduleId of expandedModuleIds || []) includeLineage(moduleId);
   if (selectedModuleId) includeLineage(selectedModuleId);
@@ -32,53 +33,74 @@ export function buildExpandedContainerDefs(
     .filter(Boolean)
     .sort((a, b) => a.level - b.level || `${a.layer}:${a.name}`.localeCompare(`${b.layer}:${b.name}`));
   const candidates = rawCandidates;
-  const ancestryByNodeId = {};
+  const defIdSet = new Set(candidates.map((node) => node.id));
+
+  function findParentContainerId(moduleId) {
+    let current = moduleById[moduleId] || visibleById[moduleId] || null;
+    if (!current) {
+      return "";
+    }
+    let parent = current.parent_id ? moduleById[current.parent_id] || null : null;
+    while (parent) {
+      if (defIdSet.has(parent.id)) {
+        return parent.id;
+      }
+      parent = parent.parent_id ? moduleById[parent.parent_id] || null : null;
+    }
+    return "";
+  }
+
+  // Assign each visible node to the nearest visible container ancestor (Vivado-style: each expansion level
+  // wraps *its* immediate contents, not all descendants). This avoids overlapping frames and duplicate bounds.
+  const memberIdsByContainerId = new Map();
+  function addMember(containerId, memberId) {
+    if (!containerId || !memberId) return;
+    if (!memberIdsByContainerId.has(containerId)) {
+      memberIdsByContainerId.set(containerId, new Set());
+    }
+    memberIdsByContainerId.get(containerId).add(memberId);
+  }
   for (const node of visibleNodes) {
-    const chain = new Set();
-    let current = moduleById[node.id] || node;
+    // Never include a module "inside itself".
+    let current = node.parent_id ? (moduleById[node.parent_id] || visibleById[node.parent_id] || null) : null;
     while (current) {
-      chain.add(current.id);
+      if (defIdSet.has(current.id)) {
+        addMember(current.id, node.id);
+        break;
+      }
       if (!current.parent_id) {
         break;
       }
       current = moduleById[current.parent_id] || null;
     }
-    ancestryByNodeId[node.id] = chain;
   }
-  const defsWithoutParent = [];
-  for (const node of candidates) {
-    const moduleId = node.id;
-    let memberIds = visibleNodes
-      .filter((item) => item.id !== moduleId && ancestryByNodeId[item.id]?.has(moduleId))
-      .map((item) => item.id);
-    if (!memberIds.length) {
-      memberIds = visibleNodes.filter((item) => item.parent_id === moduleId).map((item) => item.id);
-    }
-    if (!memberIds.length) {
-      continue;
-    }
-    defsWithoutParent.push({
-      id: node.id,
-      name: node.name,
-      layer: node.layer,
-      level: node.level,
-      parentId: "",
-      memberIds,
-    });
+
+  const defsUnfiltered = candidates.map((node) => ({
+    id: node.id,
+    name: node.name,
+    layer: node.layer,
+    level: node.level,
+    parentId: findParentContainerId(node.id),
+    memberIds: Array.from(memberIdsByContainerId.get(node.id) || []),
+  }));
+
+  const childCountById = new Map();
+  for (const def of defsUnfiltered) {
+    if (!def.parentId) continue;
+    childCountById.set(def.parentId, (childCountById.get(def.parentId) || 0) + 1);
   }
-  const defIdSet = new Set(defsWithoutParent.map((def) => def.id));
-  const defs = defsWithoutParent.map((def) => {
-    let parentId = "";
-    let parent = moduleById[def.id]?.parent_id ? moduleById[moduleById[def.id].parent_id] : null;
-    while (parent) {
-      if (defIdSet.has(parent.id)) {
-        parentId = parent.id;
-        break;
-      }
-      parent = parent.parent_id ? moduleById[parent.parent_id] : null;
-    }
-    return { ...def, parentId };
+
+  const defs = defsUnfiltered.filter((def) => {
+    if (def.memberIds.length) return true;
+    if (childCountById.get(def.id)) return true;
+    // Keep lane roots even when they currently contain only nested containers (or no nodes) so the overall
+    // diagram still has stable layer frames when "Show Lanes" is off.
+    if (isLayerRootId(def.id)) return true;
+    // System root is allowed to exist as a wrapper even with only nested containers.
+    if (String(def.id || "").startsWith("system:")) return true;
+    return false;
   });
+
   return defs;
 }
 
@@ -160,7 +182,8 @@ export function materializeExpandedContainers(containerDefs, nodeById) {
       memberCount: members.length,
     };
     // Parent frames should be visibly inset from children so the dashed borders don't merge.
-    const childInset = { top: 20, left: 20, right: 18, bottom: 18 };
+    // Keep enough top/left inset so header chips and dashed borders never collide (Vivado-like nesting).
+    const childInset = { top: 28, left: 28, right: 20, bottom: 20 };
     for (const child of childBoxes) {
       box = expandToContain(box, child, childInset);
     }
