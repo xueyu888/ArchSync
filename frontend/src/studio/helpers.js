@@ -343,6 +343,7 @@ export function collectSemanticViewGraph(model, focusModuleId, childrenByParent,
       edges: [],
     };
   }
+  const isLayerRootId = (moduleId) => String(moduleId || "").startsWith("layer:");
   const expandedSet = ensureSet(expandedModuleIds);
   const focusPath = lineage(focusModuleId, moduleById);
   const focusPathIds = focusPath.map((item) => item.id);
@@ -350,6 +351,13 @@ export function collectSemanticViewGraph(model, focusModuleId, childrenByParent,
   const rootId = focusPath[0]?.id || focusModuleId;
   let visibleIds = new Set();
   for (const child of childrenByParent[focusModuleId] || []) {
+    // Layer root nodes are represented by lanes; treat them as transparent groups in the semantic view.
+    if (isLayerRootId(child.id)) {
+      for (const grandChild of childrenByParent[child.id] || []) {
+        visibleIds.add(grandChild.id);
+      }
+      continue;
+    }
     visibleIds.add(child.id);
   }
   if (!visibleIds.size) {
@@ -541,6 +549,32 @@ export function boundsWithPadding(layout, nodes, lanes, moduleContainers) {
   };
 }
 
+function normalizeToPositive(nodes, lanes, moduleContainers, minCoord = 8) {
+  const candidates = [
+    ...nodes.map((item) => ({ x: item.x, y: item.y })),
+    ...lanes.map((item) => ({ x: item.x, y: item.y })),
+    ...(moduleContainers || []).map((item) => ({ x: item.x, y: item.y })),
+  ];
+  if (!candidates.length) {
+    return { nodes, lanes, moduleContainers, dx: 0, dy: 0 };
+  }
+  const minX = Math.min(...candidates.map((item) => item.x));
+  const minY = Math.min(...candidates.map((item) => item.y));
+  const dx = minX < minCoord ? minCoord - minX : 0;
+  const dy = minY < minCoord ? minCoord - minY : 0;
+  if (!dx && !dy) {
+    return { nodes, lanes, moduleContainers, dx, dy };
+  }
+  const shift = (item) => ({ ...item, x: item.x + dx, y: item.y + dy });
+  return {
+    nodes: nodes.map(shift),
+    lanes: lanes.map(shift),
+    moduleContainers: (moduleContainers || []).map(shift),
+    dx,
+    dy,
+  };
+}
+
 function expandLanesToContain(lanes, moduleContainers) {
   if (!lanes?.length || !moduleContainers?.length) {
     return lanes || [];
@@ -569,6 +603,33 @@ function expandLanesToContain(lanes, moduleContainers) {
       height: Math.max(lane.height, maxY - Math.max(8, minY)),
     };
   });
+}
+
+function packLanesHorizontally(lanes, orderedLayers, laneGap, startX) {
+  const laneByLayer = new Map((lanes || []).map((lane) => [lane.layer, lane]));
+  const order = (orderedLayers || []).filter((layer) => laneByLayer.has(layer));
+  if (!order.length) {
+    return { lanes: lanes || [], shiftByLayer: {} };
+  }
+  const minX = Math.min(...Array.from(laneByLayer.values()).map((lane) => lane.x));
+  let cursorX = Number.isFinite(startX) ? startX : minX;
+  const packed = [];
+  const shiftByLayer = {};
+  for (const layer of order) {
+    const lane = laneByLayer.get(layer);
+    const shiftX = cursorX - lane.x;
+    shiftByLayer[layer] = shiftX;
+    packed.push({ ...lane, x: cursorX });
+    cursorX += lane.width + laneGap;
+  }
+  // Preserve any lanes not in the computed order (should be rare).
+  for (const lane of lanes || []) {
+    if (shiftByLayer[lane.layer] === undefined) {
+      packed.push(lane);
+      shiftByLayer[lane.layer] = 0;
+    }
+  }
+  return { lanes: packed, shiftByLayer };
 }
 export function layoutGraph(
   nodes,
@@ -817,19 +878,27 @@ export function layoutGraph(
   const nodeById = Object.fromEntries(drawNodes.map((item) => [item.id, item]));
   const moduleContainers = materializeExpandedContainers(containerDefs, nodeById);
   const expandedLanes = expandLanesToContain(lanes, moduleContainers);
+  // Expand nested module frames can widen a lane; pack lanes again (Vivado-like) so that they don't overlap.
+  const packed = packLanesHorizontally(expandedLanes, layers, laneGap, left);
+  const shiftByLayer = packed.shiftByLayer || {};
+  const shiftedNodes = drawNodes.map((node) => ({ ...node, x: node.x + (shiftByLayer[node.layer] || 0) }));
+  // Containers like `system:*` span across layers. They must be recomputed after per-layer lane shifts.
+  const shiftedNodeById = Object.fromEntries(shiftedNodes.map((item) => [item.id, item]));
+  const shiftedContainers = materializeExpandedContainers(containerDefs, shiftedNodeById);
+  const normalized = normalizeToPositive(shiftedNodes, packed.lanes, shiftedContainers, 8);
   const sized = boundsWithPadding(
     { width, height: maxHeight },
-    drawNodes,
-    expandedLanes,
-    moduleContainers,
+    normalized.nodes,
+    normalized.lanes,
+    normalized.moduleContainers,
   );
   return {
     width: sized.width,
     height: sized.height,
-    lanes: expandedLanes,
+    lanes: normalized.lanes,
     containerDefs,
-    moduleContainers,
-    nodes: drawNodes,
+    moduleContainers: normalized.moduleContainers,
+    nodes: normalized.nodes,
   };
 }
 export function snapToGrid(value, grid = 12) {
@@ -877,12 +946,19 @@ export function applyManualLayout(layout, manualPositions) {
   const nodeById = Object.fromEntries(nodes.map((item) => [item.id, item]));
   const moduleContainers = materializeExpandedContainers(layout.containerDefs || [], nodeById);
   const expandedLanes = expandLanesToContain(lanes, moduleContainers);
-  const sized = boundsWithPadding(layout, nodes, expandedLanes, moduleContainers);
+  const orderedLayers = (layout.lanes || []).map((lane) => lane.layer);
+  const packed = packLanesHorizontally(expandedLanes, orderedLayers, 96, Math.min(...expandedLanes.map((lane) => lane.x)));
+  const shiftByLayer = packed.shiftByLayer || {};
+  const shiftedNodes = nodes.map((node) => ({ ...node, x: node.x + (shiftByLayer[node.layer] || 0) }));
+  const shiftedNodeById = Object.fromEntries(shiftedNodes.map((item) => [item.id, item]));
+  const shiftedContainers = materializeExpandedContainers(layout.containerDefs || [], shiftedNodeById);
+  const normalized = normalizeToPositive(shiftedNodes, packed.lanes, shiftedContainers, 8);
+  const sized = boundsWithPadding(layout, normalized.nodes, normalized.lanes, normalized.moduleContainers);
   return {
     ...layout,
-    nodes,
-    lanes: expandedLanes,
-    moduleContainers,
+    nodes: normalized.nodes,
+    lanes: normalized.lanes,
+    moduleContainers: normalized.moduleContainers,
     width: sized.width,
     height: sized.height,
   };
