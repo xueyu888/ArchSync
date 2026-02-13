@@ -1,21 +1,23 @@
 {
   "studioUrl": "http://127.0.0.1:5173/",
-  "startedAt": "2026-02-13T05:55:13.247Z",
+  "startedAt": "2026-02-13T11:19:43.993Z",
   "screenshots": {
     "overview": "docs/qa/studio-ui-regression-latest-overview.png",
     "hierarchy": "docs/qa/studio-ui-regression-latest-hierarchy.png",
     "stress": "docs/qa/studio-ui-regression-latest-stress.png"
   },
   "metrics": {
-    "containerCount": 9,
+    "containerCount": 31,
     "containmentViolations": [],
-    "headerCount": 7,
+    "headerCount": 2,
     "headerContainmentViolations": [],
     "headerPlacementViolations": [],
     "headerOverlapPairs": [],
     "headerNodeOverlapPairs": [],
     "renderedLayerNodes": [],
-    "nonLayerContainerCount": 6
+    "nonLayerContainerCount": 26,
+    "dimmedNodes": 0,
+    "dimmedEdges": 0
   },
   "failures": [],
   "deepTarget": {
@@ -24,21 +26,23 @@
     "name": "api.js"
   },
   "hierarchy_metrics": {
-    "containerCount": 8,
+    "containerCount": 10,
     "containmentViolations": [],
-    "headerCount": 7,
+    "headerCount": 2,
     "headerContainmentViolations": [],
     "headerPlacementViolations": [],
     "headerOverlapPairs": [],
     "headerNodeOverlapPairs": [],
     "renderedLayerNodes": [],
-    "nonLayerContainerCount": 6
+    "nonLayerContainerCount": 7,
+    "dimmedNodes": 0,
+    "dimmedEdges": 0
   },
-  "finishedAt": "2026-02-13T05:55:38.480Z",
-  "sourceReport": "docs/qa/studio-ui-regression-2026-02-13T05-55-12-962Z.json",
+  "finishedAt": "2026-02-13T11:20:25.860Z",
+  "sourceReport": "docs/qa/studio-ui-regression-2026-02-13T11-19-43-468Z.json",
   "sourceScreenshots": {
-    "overview": "docs/qa/studio-ui-regression-2026-02-13T05-55-12-962Z-overview.png",
-    "hierarchy": "docs/qa/studio-ui-regression-2026-02-13T05-55-12-962Z-hierarchy.png",
-    "stress": "docs/qa/studio-ui-regression-2026-02-13T05-55-12-962Z-stress.png"
+    "overview": "docs/qa/studio-ui-regression-2026-02-13T11-19-43-468Z-overview.png",
+    "hierarchy": "docs/qa/studio-ui-regression-2026-02-13T11-19-43-468Z-hierarchy.png",
+    "stress": "docs/qa/studio-ui-regression-2026-02-13T11-19-43-468Z-stress.png"
   }
 }

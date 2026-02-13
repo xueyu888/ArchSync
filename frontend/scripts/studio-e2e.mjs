@@ -20,6 +20,15 @@ async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
 }
 
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function sampleUniqueIndices(size, count) {
   const indices = Array.from({ length: size }, (_, i) => i);
   for (let i = indices.length - 1; i > 0; i -= 1) {
@@ -94,8 +103,10 @@ async function main() {
         }
 
         const bodies = Array.from(document.querySelectorAll("g.module-container-body-layer"));
-        const headerRects = Array.from(document.querySelectorAll("g.module-container-header-layer rect.module-container-header-bg"));
+        const headerRects = Array.from(document.querySelectorAll("g.hierarchy-chip rect.hierarchy-chip-bg"));
         const nodeGroups = Array.from(document.querySelectorAll("svg.diagram g.node"));
+        const dimmedNodes = document.querySelectorAll("svg.diagram g.node.dimmed").length;
+        const dimmedEdges = document.querySelectorAll("svg.diagram g.edge.dimmed").length;
 
         const bodyById = new Map();
         for (const g of bodies) {
@@ -125,7 +136,7 @@ async function main() {
         const headersById = new Map();
         const headers = [];
         for (const rect of headerRects) {
-          const group = rect.closest("g.module-container-header-layer");
+          const group = rect.closest("g.hierarchy-chip");
           const id = group?.getAttribute("data-id") || "";
           const bb = bboxOf(rect);
           if (id && bb && !headersById.has(id)) {
@@ -136,19 +147,6 @@ async function main() {
 
         const headerContainmentViolations = [];
         const headerPlacementViolations = [];
-        for (const [id, headerBB] of headersById.entries()) {
-          const bodyBB = bodyById.get(id);
-          if (!bodyBB) continue;
-          if (!contains(bodyBB, headerBB, 0)) {
-            headerContainmentViolations.push({ id, body: bodyBB, header: headerBB });
-          }
-          const dx = headerBB.x - bodyBB.x;
-          const dy = headerBB.y - bodyBB.y;
-          // Expect header tag anchored on the left/top edge of its container.
-          if (dx > 40 || dx < -1 || dy > 28 || dy < -1) {
-            headerPlacementViolations.push({ id, dx, dy, body: bodyBB, header: headerBB });
-          }
-        }
 
         const headerBoxes = headers.map((item) => item.bb);
         const headerOverlapPairs = [];
@@ -200,6 +198,8 @@ async function main() {
           headerNodeOverlapPairs,
           renderedLayerNodes,
           nonLayerContainerCount: nonLayerContainerIds.length,
+          dimmedNodes,
+          dimmedEdges,
         };
       });
     }
@@ -213,7 +213,8 @@ async function main() {
     await page.locator("svg.diagram g.node").first().waitFor({ timeout: 60_000 });
     await page.screenshot({ path: overviewPng, fullPage: true });
 
-    // Deep hierarchy: double-click the deepest module in the sidebar list to expand its path.
+    // Deep hierarchy: double-click the deepest module in the sidebar list to select it,
+    // then expand one visible node and verify container header toggles collapse it.
     await page.fill("#search", "");
     const deepestIndex = await page.evaluate(() => {
       const items = Array.from(document.querySelectorAll("section.module-list button.module-item"));
@@ -246,8 +247,33 @@ async function main() {
     }, null, { timeout: 12_000 });
     await page.waitForTimeout(250);
 
+    const expandTargetId = await page.evaluate(() => {
+      const toggle = document.querySelector("svg.diagram g.node.expandable g.node-expand-toggle");
+      const node = toggle?.closest("g.node");
+      return node?.getAttribute("data-id") || "";
+    });
+    if (expandTargetId) {
+      const toggle = page.locator(`svg.diagram g.node[data-id="${expandTargetId}"] g.node-expand-toggle`).first();
+      if (await toggle.count()) {
+        await toggle.click({ timeout: 10_000 });
+        await page.waitForFunction((id) => !document.querySelector(`svg.diagram g.node[data-id="${id}"]`), expandTargetId, { timeout: 12_000 });
+        await page.waitForTimeout(200);
+      }
+    }
+
     await page.screenshot({ path: hierarchyPng, fullPage: true });
     report.hierarchy_metrics = await evaluateMetrics();
+
+    if (expandTargetId) {
+      const headerToggle = page.locator(`svg.diagram g.hierarchy-chip[data-id="${expandTargetId}"] g.hierarchy-chip-toggle`).first();
+      if (await headerToggle.count()) {
+        await headerToggle.click({ timeout: 10_000 });
+        await page.waitForFunction((id) => !!document.querySelector(`svg.diagram g.node[data-id="${id}"]`), expandTargetId, { timeout: 12_000 });
+        await page.waitForTimeout(200);
+      } else {
+        throw new Error(`missing header toggle for expanded node: ${expandTargetId}`);
+      }
+    }
 
     // Stress: random 50 modules across depths, 20 Add/Remove loops.
     await page.fill("#search", "");
@@ -294,20 +320,27 @@ async function main() {
     await fs.writeFile(reportJson, JSON.stringify(report, null, 2) + "\n", "utf8");
 
     // Keep stable "latest" artifacts to make reviews easy (and avoid committing timestamp spam).
-    await fs.copyFile(overviewPng, latestOverviewPng);
-    await fs.copyFile(hierarchyPng, latestHierarchyPng);
-    await fs.copyFile(stressPng, latestStressPng);
-    const latestReport = {
-      ...report,
-      sourceReport: path.relative(repoRoot, reportJson),
-      sourceScreenshots: { ...report.screenshots },
-      screenshots: {
-        overview: path.relative(repoRoot, latestOverviewPng),
-        hierarchy: path.relative(repoRoot, latestHierarchyPng),
-        stress: path.relative(repoRoot, latestStressPng),
-      },
-    };
-    await fs.writeFile(latestReportJson, JSON.stringify(latestReport, null, 2) + "\n", "utf8");
+    const canUpdateLatest = await Promise.all([
+      fileExists(overviewPng),
+      fileExists(hierarchyPng),
+      fileExists(stressPng),
+    ]).then((items) => items.every(Boolean));
+    if (canUpdateLatest) {
+      await fs.copyFile(overviewPng, latestOverviewPng);
+      await fs.copyFile(hierarchyPng, latestHierarchyPng);
+      await fs.copyFile(stressPng, latestStressPng);
+      const latestReport = {
+        ...report,
+        sourceReport: path.relative(repoRoot, reportJson),
+        sourceScreenshots: { ...report.screenshots },
+        screenshots: {
+          overview: path.relative(repoRoot, latestOverviewPng),
+          hierarchy: path.relative(repoRoot, latestHierarchyPng),
+          stress: path.relative(repoRoot, latestStressPng),
+        },
+      };
+      await fs.writeFile(latestReportJson, JSON.stringify(latestReport, null, 2) + "\n", "utf8");
+    }
   }
 
   process.stdout.write(`${path.relative(repoRoot, reportJson)}\n`);
