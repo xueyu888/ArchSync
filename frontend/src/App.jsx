@@ -746,19 +746,6 @@ function App() {
     setActivePortFocus(null);
     setExpandedModuleIds(new Set());
   }
-  function snapshotCurrentLayoutPositions() {
-    if (!currentParentId) {
-      return;
-    }
-    const snapshot = Object.fromEntries(renderLayout.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
-    setManualLayouts((old) => ({
-      ...old,
-      [currentParentId]: {
-        ...(old[currentParentId] || {}),
-        ...snapshot,
-      },
-    }));
-  }
   function showNodeHover(event, nodeId) {
     setHoverNodeId(nodeId);
     const summary = llmSummaries[nodeId];
@@ -811,6 +798,16 @@ function App() {
   function startNodeDrag(event, node) {
     if (!currentParentId || event.button !== 0) {
       return;
+    }
+    const target = event.target;
+    if (target instanceof Element) {
+      if (
+        target.closest("g.node-expand-toggle")
+        || target.closest("g.node-agg-badge")
+        || target.closest("g.node-port-group")
+      ) {
+        return;
+      }
     }
     const point = toSvgPoint(event.clientX, event.clientY);
     if (!point) {
@@ -980,7 +977,11 @@ function App() {
     if (!(target instanceof Element)) {
       return;
     }
-    const fromInteractive = target.closest("g.node") || target.closest("g.edge-group");
+    const fromInteractive = target.closest("g.node")
+      || target.closest("g.edge-group")
+      || target.closest("g.module-container-header-layer")
+      || target.closest("g.module-container-toggle")
+      || target.closest("g.hierarchy-chip-toggle");
     if (fromInteractive && event.button !== 1) {
       return;
     }
@@ -1061,7 +1062,6 @@ function App() {
     setActivePortFocus(null);
     setSelectedModuleId(moduleId);
     if (!hasChildren(moduleId)) return;
-    snapshotCurrentLayoutPositions();
     setExpandedModuleIds((old) => {
       const next = old.has(moduleId)
         ? studio.collapseExpandedSubtree(old, moduleId, childrenByParent, "")
@@ -1074,7 +1074,6 @@ function App() {
     if (!containerId || !moduleById[containerId]) {
       return;
     }
-    snapshotCurrentLayoutPositions();
     setSelectedEdgeId("");
     setActivePortFocus(null);
     setSelectedModuleId(containerId);
@@ -1413,7 +1412,6 @@ function App() {
                   return;
                 }
                 selectModule(item.id, { scroll: true });
-                snapshotCurrentLayoutPositions();
                 setExpandedModuleIds((old) => {
                   const next = studio.withFocusPathExpanded(
                     old,
@@ -1784,11 +1782,9 @@ function App() {
                   || relatedToHover;
                 const showLabel = showEdgeLabels && (!denseLabelMode || selected || selectedByEdge || relatedToHover);
                 let dimmed = false;
-                if (hoverNodeId) {
-                  dimmed = !relatedToHover;
-                } else if (selectedEdgeId) {
+                if (selectedEdgeId) {
                   dimmed = edge.id !== selectedEdgeId;
-                } else if (selectedIsVisible) {
+                } else if ((edgeScope === "selected" || activePortFocus) && selectedIsVisible) {
                   dimmed = !relatedToSelectedModule;
                 }
                 const edgeKindClass = ["dependency", "interface", "dependency_file"].includes(edge.kind)
@@ -1908,11 +1904,10 @@ function App() {
                 );
               })}
                   <ModuleContainerHeaders
-                    containers={renderLayout.moduleContainers || []}
+                    containers={activeContainerChain.map((id) => containerById[id]).filter(Boolean)}
+                    maxWidth={renderLayout.width}
                     activeContainerId={activeContainerId}
-                    activeContainerIdSet={activeContainerIdSet}
                     onCollapseContainer={collapseContainer}
-                    onDragContainer={(event, containerId) => startGroupDrag(event, containerId)}
                   />
                   {renderLayout.nodes.map((node) => {
                   const isActive = node.id === selectedModuleId;
@@ -1931,8 +1926,8 @@ function App() {
                   const titleX = node.x + (canExpand ? 46 : 14);
                   const isHoveredNode = hoverNodeId === node.id;
                   const isNeighborNode = hoverContext.neighborIds.has(node.id) || selectionNeighborIds.has(node.id);
-                  const dimmedByHover = hoverNodeId && !isHoveredNode && !isNeighborNode;
-                  const dimmedBySelection = (!hoverNodeId && selectedIsVisible && selectedModuleId && node.id !== selectedModuleId && !isNeighborNode);
+                  const dimmedByHover = false;
+                  const dimmedBySelection = (!hoverNodeId && edgeScope === "selected" && selectedIsVisible && selectedModuleId && node.id !== selectedModuleId && !isNeighborNode);
                   const showPins = !autoHidePins || isActive || isHoveredNode || isNeighborNode || (activePortFocus && activePortFocus.nodeId === node.id);
                   const dimmed = dimmedByHover || dimmedBySelection;
                   const nodeClasses = [
@@ -1992,6 +1987,7 @@ function App() {
                         return (
                           <g
                             key={`${port.id}-in`}
+                            className="node-port-group in"
                             onClick={(event) => {
                               event.stopPropagation();
                               const portId = port.id || `in-${port.name}-${port.protocol}`;
@@ -2056,6 +2052,7 @@ function App() {
                         return (
                           <g
                             key={`${port.id}-out`}
+                            className="node-port-group out"
                             onClick={(event) => {
                               event.stopPropagation();
                               const portId = port.id || `out-${port.name}-${port.protocol}`;

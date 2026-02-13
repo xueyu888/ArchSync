@@ -1188,19 +1188,6 @@ button.active-focus-toggle {
   fill: #f8fafc;
 }
 
-.node.context-context .node-body {
-  stroke: #8da8c1;
-  fill: #f6f9fc;
-  fill-opacity: 0.9;
-}
-
-.node.context-context .title,
-.node.context-context .meta,
-.node.context-context .summary-line,
-.node.context-context .port,
-.node.context-context .summary-tag {
-  opacity: 0.78;
-}
 
 .node.neighbor .node-body {
   stroke: #2f6fa5;
@@ -1234,8 +1221,11 @@ button.active-focus-toggle {
 
 .node.active .node-body {
   stroke: var(--alert);
-  stroke-width: 2.4;
+  stroke-width: 3.2;
   fill: #fff4eb;
+  filter:
+    drop-shadow(2px 4px 6px rgba(20, 62, 96, 0.18))
+    drop-shadow(0 0 10px rgba(216, 101, 53, 0.26));
 }
 
 .node.active .node-header {
