@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildArchitecture, diffArchitecture, fetchModel, healthCheck, runCIGate } from "./api";
 import "./App.css";
 import * as studio from "./studio/helpers";
+import { DiagramDefs } from "./studio/DiagramDefs";
+import { ModuleContainerHeaders } from "./studio/ModuleContainerHeaders";
 function App() {
   const [model, setModel] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
@@ -21,6 +23,8 @@ function App() {
   const [showEdgeLabels, setShowEdgeLabels] = useState(true);
   const [edgeMinCount, setEdgeMinCount] = useState(1);
   const [edgeScope, setEdgeScope] = useState("all");
+  const [showLanes, setShowLanes] = useState(false);
+  const [autoHidePins, setAutoHidePins] = useState(true);
   const [selectedAroundHops, setSelectedAroundHops] = useState(-1);
   const [edgeFilters, setEdgeFilters] = useState({});
   const [busy, setBusy] = useState({ build: false, diff: false, ci: false, refresh: false });
@@ -30,6 +34,7 @@ function App() {
   const [manualLayouts, setManualLayouts] = useState({});
   const [draggingNodeId, setDraggingNodeId] = useState("");
   const [dragPreview, setDragPreview] = useState(null);
+  const [pendingScrollId, setPendingScrollId] = useState("");
   const [panningCanvas, setPanningCanvas] = useState(false);
   const [hoverCard, setHoverCard] = useState(null);
   const [hoverNodeId, setHoverNodeId] = useState("");
@@ -45,6 +50,7 @@ function App() {
   const svgRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const dragRef = useRef(null);
+  const groupDragRef = useRef(null);
   const panRef = useRef(null);
   const suppressClickRef = useRef(false);
   const effectiveModules = useMemo(() => {
@@ -144,6 +150,12 @@ function App() {
       if (savedEdgeScope === "selected" || savedEdgeScope === "all") {
         setEdgeScope(savedEdgeScope);
       }
+      const savedShowLanes = window.localStorage.getItem("archsync.showLanes");
+      if (savedShowLanes === "1") setShowLanes(true);
+      if (savedShowLanes === "0") setShowLanes(false);
+      const savedAutoHidePins = window.localStorage.getItem("archsync.autoHidePins");
+      if (savedAutoHidePins === "0") setAutoHidePins(false);
+      if (savedAutoHidePins === "1") setAutoHidePins(true);
       const savedZoom = Number(window.localStorage.getItem("archsync.zoom") || "");
       if (Number.isFinite(savedZoom) && savedZoom > 0) {
         setZoom(studio.clampZoom(savedZoom));
@@ -232,6 +244,14 @@ function App() {
   }, [edgeScope]);
   useEffect(() => {
     try {
+      window.localStorage.setItem("archsync.showLanes", showLanes ? "1" : "0");
+      window.localStorage.setItem("archsync.autoHidePins", autoHidePins ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
+  }, [showLanes, autoHidePins]);
+  useEffect(() => {
+    try {
       window.localStorage.setItem("archsync.zoom", String(zoom));
     } catch {
       // ignore storage errors
@@ -288,9 +308,37 @@ function App() {
     [scopedEdges],
   );
   const effectiveEdgeMinCount = Math.min(Math.max(1, edgeMinCount), maxEdgeCount);
+  const selectedScopeNodeIds = useMemo(() => {
+    if (!selectedModuleId) {
+      return null;
+    }
+    const scope = descendantsByModule[selectedModuleId];
+    if (!scope) {
+      return new Set([selectedModuleId]);
+    }
+    const keep = new Set();
+    for (const node of scopedNodes) {
+      if (scope.has(node.id)) {
+        keep.add(node.id);
+      }
+    }
+    return keep.size ? keep : new Set([selectedModuleId]);
+  }, [selectedModuleId, scopedNodes, descendantsByModule]);
   const selectedInCurrentDepth = useMemo(
-    () => !!selectedModuleId && scopedNodes.some((item) => item.id === selectedModuleId),
-    [selectedModuleId, scopedNodes],
+    () => {
+      if (!selectedModuleId) {
+        return false;
+      }
+      if (scopedNodes.some((item) => item.id === selectedModuleId)) {
+        return true;
+      }
+      const scope = descendantsByModule[selectedModuleId];
+      if (!scope) {
+        return false;
+      }
+      return scopedNodes.some((item) => scope.has(item.id));
+    },
+    [selectedModuleId, scopedNodes, descendantsByModule],
   );
   useEffect(() => {
     if (edgeScope === "selected" && !selectedInCurrentDepth) {
@@ -307,12 +355,12 @@ function App() {
       .filter((edge) => edgeFilters[edge.kind] !== false)
       .filter((edge) => (Number(edge.count) || 1) >= effectiveEdgeMinCount)
       .filter((edge) => {
-        if (edgeScope !== "selected" || !selectedInCurrentDepth) {
+        if (edgeScope !== "selected" || !selectedInCurrentDepth || !selectedScopeNodeIds) {
           return true;
         }
-        return edge.src_id === selectedModuleId || edge.dst_id === selectedModuleId;
+        return selectedScopeNodeIds.has(edge.src_id) || selectedScopeNodeIds.has(edge.dst_id);
       }),
-    [scopedEdges, edgeFilters, effectiveEdgeMinCount, edgeScope, selectedInCurrentDepth, selectedModuleId],
+    [scopedEdges, edgeFilters, effectiveEdgeMinCount, edgeScope, selectedInCurrentDepth, selectedScopeNodeIds],
   );
   const autoLayout = useMemo(
     () => studio.layoutGraph(
@@ -350,9 +398,7 @@ function App() {
     if (!dragPreview || dragPreview.parentId !== currentParentId) {
       return layout;
     }
-    return studio.applyManualLayout(layout, {
-      [dragPreview.nodeId]: { x: dragPreview.x, y: dragPreview.y },
-    });
+    return studio.applyManualLayout(layout, dragPreview.positions || {});
   }, [layout, dragPreview, currentParentId]);
   const drawNodeById = useMemo(
     () => Object.fromEntries(renderLayout.nodes.map((item) => [item.id, item])),
@@ -362,6 +408,26 @@ function App() {
     () => studio.buildEdgeGeometries(visibleEdges, drawNodeById),
     [visibleEdges, drawNodeById],
   );
+  const containerById = useMemo(
+    () => Object.fromEntries((renderLayout.moduleContainers || []).map((container) => [container.id, container])),
+    [renderLayout.moduleContainers],
+  );
+  const containerMembersById = useMemo(
+    () => Object.fromEntries((renderLayout.containerDefs || []).map((def) => [def.id, def.memberIds || []])),
+    [renderLayout.containerDefs],
+  );
+  const activeContainerChain = useMemo(() => {
+    const anchor = selectedModuleId && moduleById[selectedModuleId]
+      ? selectedModuleId
+      : systemModule?.id || "";
+    if (!anchor) {
+      return [];
+    }
+    const path = studio.lineage(anchor, moduleById).map((item) => item.id);
+    return path.filter((moduleId) => !!containerById[moduleId]);
+  }, [selectedModuleId, systemModule, moduleById, containerById]);
+  const activeContainerId = activeContainerChain.length ? activeContainerChain[activeContainerChain.length - 1] : "";
+  const activeContainerIdSet = useMemo(() => new Set(activeContainerChain), [activeContainerChain]);
   const availableLevels = useMemo(() => {
     return Array.from(
       new Set((effectiveModules || []).filter((item) => item.level > 0).map((item) => item.level)),
@@ -451,16 +517,25 @@ function App() {
     }
     return { incoming, outgoing };
   }, [model, moduleById, selectedModuleId]);
+  const breadcrumbAnchorId = useMemo(() => {
+    if (selectedModuleId && moduleById[selectedModuleId]) {
+      return selectedModuleId;
+    }
+    if (currentParentId && moduleById[currentParentId]) {
+      return currentParentId;
+    }
+    return systemModule?.id || "";
+  }, [selectedModuleId, currentParentId, systemModule, moduleById]);
   const breadcrumb = useMemo(
-    () => (currentParentId ? studio.lineage(currentParentId, moduleById) : []),
-    [currentParentId, moduleById],
+    () => (breadcrumbAnchorId ? studio.lineage(breadcrumbAnchorId, moduleById) : []),
+    [breadcrumbAnchorId, moduleById],
   );
   const currentDepth = useMemo(() => {
-    if (!currentParentId || !moduleById[currentParentId]) {
+    if (!breadcrumbAnchorId || !moduleById[breadcrumbAnchorId]) {
       return 0;
     }
-    return moduleById[currentParentId].level;
-  }, [currentParentId, moduleById]);
+    return moduleById[breadcrumbAnchorId].level;
+  }, [breadcrumbAnchorId, moduleById]);
   const selectedIsVisible = selectedInCurrentDepth;
   const visibleEdgeRows = useMemo(
     () => visibleEdges.map((edge) => ({
@@ -506,6 +581,12 @@ function App() {
     }
     return { edgeIds, neighborIds };
   }, [hoverNodeId, visibleEdges]);
+  const selectionNeighborIds = useMemo(() => {
+    if (!selectedModuleId) return new Set();
+    const neighborIds = new Set();
+    for (const edge of visibleEdges) if (edge.src_id === selectedModuleId && edge.dst_id !== selectedModuleId) neighborIds.add(edge.dst_id); else if (edge.dst_id === selectedModuleId && edge.src_id !== selectedModuleId) neighborIds.add(edge.src_id);
+    return neighborIds;
+  }, [selectedModuleId, visibleEdges]);
   function appendLog(text, severity = "info") {
     const item = {
       id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -660,6 +741,24 @@ function App() {
     setDragPreview(null);
     setManualLayouts({});
   }
+  function collapseAllExpanded() {
+    setSelectedEdgeId("");
+    setActivePortFocus(null);
+    setExpandedModuleIds(new Set());
+  }
+  function snapshotCurrentLayoutPositions() {
+    if (!currentParentId) {
+      return;
+    }
+    const snapshot = Object.fromEntries(renderLayout.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+    setManualLayouts((old) => ({
+      ...old,
+      [currentParentId]: {
+        ...(old[currentParentId] || {}),
+        ...snapshot,
+      },
+    }));
+  }
   function showNodeHover(event, nodeId) {
     setHoverNodeId(nodeId);
     const summary = llmSummaries[nodeId];
@@ -733,9 +832,7 @@ function App() {
     setDraggingNodeId(node.id);
     setDragPreview({
       parentId: currentParentId,
-      nodeId: node.id,
-      x: node.x,
-      y: node.y,
+      positions: { [node.id]: { x: node.x, y: node.y } },
     });
     setHoverCard(null);
     event.stopPropagation();
@@ -765,9 +862,7 @@ function App() {
       drag.lastY = nextY;
       setDragPreview({
         parentId: drag.parentId,
-        nodeId: drag.nodeId,
-        x: nextX,
-        y: nextY,
+        positions: { [drag.nodeId]: { x: nextX, y: nextY } },
       });
     }
   }
@@ -785,6 +880,97 @@ function App() {
     dragRef.current = null;
     setDragPreview(null);
     setDraggingNodeId("");
+  }
+  function startGroupDrag(event, containerId) {
+    if (!currentParentId || event.button !== 0) {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    if (target.closest("g.module-container-toggle")) {
+      return;
+    }
+    const memberIds = containerMembersById[containerId] || [];
+    if (!memberIds.length) {
+      return;
+    }
+    const point = toSvgPoint(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+    const positions = {};
+    for (const nodeId of memberIds) {
+      const node = drawNodeById[nodeId];
+      if (node) {
+        positions[nodeId] = { x: node.x, y: node.y };
+      }
+    }
+    if (!Object.keys(positions).length) {
+      return;
+    }
+    groupDragRef.current = {
+      pointerId: event.pointerId,
+      parentId: currentParentId,
+      containerId,
+      startPoint: point,
+      startPositions: positions,
+      lastPositions: positions,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setDragPreview({
+      parentId: currentParentId,
+      positions,
+    });
+    setHoverCard(null);
+    event.stopPropagation();
+  }
+  function moveGroupDrag(event) {
+    const drag = groupDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || drag.parentId !== currentParentId) {
+      return;
+    }
+    const point = toSvgPoint(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+    const dx = point.x - drag.startPoint.x;
+    const dy = point.y - drag.startPoint.y;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      drag.moved = true;
+      suppressClickRef.current = true;
+    }
+    const nextPositions = {};
+    for (const [nodeId, start] of Object.entries(drag.startPositions)) {
+      nextPositions[nodeId] = {
+        x: studio.snapToGrid(start.x + dx),
+        y: studio.snapToGrid(start.y + dy),
+      };
+    }
+    drag.lastPositions = nextPositions;
+    setDragPreview({
+      parentId: drag.parentId,
+      positions: nextPositions,
+    });
+  }
+  function finishGroupDrag(event) {
+    const drag = groupDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    if (drag.moved && drag.parentId === currentParentId) {
+      setManualLayouts((old) => ({
+        ...old,
+        [currentParentId]: {
+          ...(old[currentParentId] || {}),
+          ...drag.lastPositions,
+        },
+      }));
+    }
+    groupDragRef.current = null;
+    setDragPreview(null);
   }
   function startCanvasPan(event) {
     if (event.button !== 0 && event.button !== 1) {
@@ -839,27 +1025,33 @@ function App() {
   function hasChildren(moduleId) {
     return (childrenByParent[moduleId] || []).length > 0;
   }
-  function focusModule(moduleId) {
+  const scrollToVisibleNode = useCallback((moduleId) => {
+    const wrap = canvasWrapRef.current;
+    const node = drawNodeById[moduleId];
+    const container = containerById[moduleId];
+    const target = node || container;
+    if (!wrap || !target) {
+      return false;
+    }
+    const padding = 12;
+    const targetLeft = target.x * zoom - (wrap.clientWidth - target.width * zoom) / 2 + padding;
+    const targetTop = target.y * zoom - (wrap.clientHeight - target.height * zoom) / 2 + padding;
+    wrap.scrollLeft = Math.max(0, Math.round(targetLeft));
+    wrap.scrollTop = Math.max(0, Math.round(targetTop));
+    return true;
+  }, [drawNodeById, containerById, zoom]);
+  function selectModule(moduleId, options = {}) {
     const module = moduleById[moduleId];
     if (!module) {
       return;
     }
     setSelectedEdgeId("");
     setActivePortFocus(null);
-    setCurrentParentId(moduleId);
     setSelectedModuleId(moduleId);
     setSelectedAroundHops(-1);
-    setExpandedModuleIds((old) => {
-      const next = studio.withFocusPathExpanded(
-        old,
-        moduleId,
-        childrenByParent,
-        moduleById,
-        systemModule?.id || "",
-        { includeSelf: true },
-      );
-      return studio.setsEqual(next, old) ? old : next;
-    });
+    if (options.scroll) {
+      setPendingScrollId(moduleId);
+    }
   }
   function toggleModuleExpand(moduleId) {
     if (!moduleById[moduleId]) {
@@ -869,12 +1061,28 @@ function App() {
     setActivePortFocus(null);
     setSelectedModuleId(moduleId);
     if (!hasChildren(moduleId)) return;
+    snapshotCurrentLayoutPositions();
     setExpandedModuleIds((old) => {
       const next = old.has(moduleId)
         ? studio.collapseExpandedSubtree(old, moduleId, childrenByParent, "")
         : new Set(old).add(moduleId);
       return studio.setsEqual(next, old) ? old : next;
     });
+    setPendingScrollId(moduleId);
+  }
+  function collapseContainer(containerId) {
+    if (!containerId || !moduleById[containerId]) {
+      return;
+    }
+    snapshotCurrentLayoutPositions();
+    setSelectedEdgeId("");
+    setActivePortFocus(null);
+    setSelectedModuleId(containerId);
+    setExpandedModuleIds((old) => {
+      const next = studio.collapseExpandedSubtree(old, containerId, childrenByParent, "");
+      return studio.setsEqual(next, old) ? old : next;
+    });
+    setPendingScrollId(containerId);
   }
   function expandOuterDirection(moduleId, direction) {
     if (!moduleById[moduleId] || !["in", "out"].includes(direction)) {
@@ -973,14 +1181,14 @@ function App() {
     }
   }
   function drillUpOneLevel() {
-    const currentParent = moduleById[currentParentId];
-    if (!currentParent || !currentParent.parent_id) {
+    const current = moduleById[breadcrumbAnchorId];
+    if (!current || !current.parent_id) {
       return;
     }
-    focusModule(currentParent.parent_id);
+    selectModule(current.parent_id, { scroll: true });
   }
   function jumpToCrumb(moduleId) {
-    focusModule(moduleId);
+    selectModule(moduleId, { scroll: true });
   }
   function toggleEdgeKind(kind) {
     setEdgeFilters((old) => ({ ...old, [kind]: !(old[kind] ?? true) }));
@@ -1004,27 +1212,21 @@ function App() {
     if (!systemModule) {
       return;
     }
-    const focusId = currentParentId && moduleById[currentParentId] ? currentParentId : systemModule.id;
-    const selectedId = selectedModuleId && moduleById[selectedModuleId] ? selectedModuleId : focusId;
-    if (focusId !== currentParentId) {
-      setCurrentParentId(focusId);
+    const rootId = systemModule.id;
+    const safeSelected = selectedModuleId && moduleById[selectedModuleId] ? selectedModuleId : rootId;
+    const nextViewRoot = focusMode ? safeSelected : rootId;
+    if (nextViewRoot !== currentParentId) {
+      setCurrentParentId(nextViewRoot);
     }
-    if (selectedId !== selectedModuleId) {
-      setSelectedModuleId(selectedId);
+    if (safeSelected !== selectedModuleId) {
+      setSelectedModuleId(safeSelected);
     }
     setExpandedModuleIds((old) => {
       const validIds = new Set(Object.keys(moduleById));
       const pruned = new Set(Array.from(old).filter((id) => validIds.has(id)));
-      const next = studio.withFocusPathExpanded(
-        pruned,
-        focusId,
-        childrenByParent,
-        moduleById,
-        systemModule.id,
-      );
-      return studio.setsEqual(next, old) ? old : next;
+      return studio.setsEqual(pruned, old) ? old : pruned;
     });
-  }, [systemModule, moduleById, childrenByParent, currentParentId, selectedModuleId]);
+  }, [systemModule, moduleById, childrenByParent, currentParentId, selectedModuleId, focusMode]);
   useEffect(() => {
     setSelectedEdgeId("");
     setActivePortFocus(null);
@@ -1032,11 +1234,21 @@ function App() {
     setHoverNodeId("");
     dragRef.current = null;
     panRef.current = null;
+    groupDragRef.current = null;
     setDraggingNodeId("");
     setDragPreview(null);
+    setPendingScrollId("");
     setPanningCanvas(false);
     setHoverCard(null);
   }, [currentParentId]);
+  useEffect(() => {
+    if (!pendingScrollId) {
+      return;
+    }
+    if (scrollToVisibleNode(pendingScrollId)) {
+      setPendingScrollId("");
+    }
+  }, [pendingScrollId, renderLayout, zoom, currentParentId, scrollToVisibleNode]);
   function zoomToFit() {
     const wrap = canvasWrapRef.current;
     if (!wrap || !renderLayout.width || !renderLayout.height) {
@@ -1049,35 +1261,6 @@ function App() {
     setZoom(target);
     appendMessage("info", `Zoom to fit: ${Math.round(target * 100)}%.`, "console");
   }
-  function exportCurrentSvg() {
-    const sourceSvg = svgRef.current;
-    if (!sourceSvg) {
-      appendMessage("error", "No diagram available to export.", "console");
-      return;
-    }
-    try {
-      const clone = sourceSvg.cloneNode(true);
-      clone.removeAttribute("style");
-      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-      clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
-      const serialized = new XMLSerializer().serializeToString(clone);
-      const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const stamp = new Date().toISOString().replaceAll(":", "").replaceAll(".", "");
-      const filename = `archsync-depth${currentDepth}-${stamp}.svg`;
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = filename;
-      anchor.style.display = "none";
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      appendMessage("info", `Exported SVG: ${filename}`, "console");
-    } catch (err) {
-      appendMessage("error", `Export failed: ${err instanceof Error ? err.message : String(err)}`, "console");
-    }
-  }
   async function runConsoleCommand(rawInput) {
     const line = String(rawInput || "").trim();
     if (!line) {
@@ -1087,7 +1270,7 @@ function App() {
     const cmd = command.toLowerCase();
     appendLog(`> ${line}`, "info");
     if (cmd === "help") {
-      appendMessage("info", "Commands: help, reload, zoomfit, export, diff", "console");
+      appendMessage("info", "Commands: help, reload, zoomfit, diff", "console");
       return;
     }
     if (cmd === "reload") {
@@ -1096,10 +1279,6 @@ function App() {
     }
     if (cmd === "zoomfit") {
       zoomToFit();
-      return;
-    }
-    if (cmd === "export") {
-      exportCurrentSvg();
       return;
     }
     if (cmd === "diff") {
@@ -1225,8 +1404,28 @@ function App() {
             <button
               type="button"
               key={item.id}
+              data-id={item.id}
+              data-level={String(item.level)}
               className={`module-item ${selectedModuleId === item.id ? "active" : ""}`}
-              onClick={() => focusModule(item.id)}
+              onClick={() => selectModule(item.id, { scroll: true })}
+              onDoubleClick={() => {
+                if (!systemModule) {
+                  return;
+                }
+                selectModule(item.id, { scroll: true });
+                snapshotCurrentLayoutPositions();
+                setExpandedModuleIds((old) => {
+                  const next = studio.withFocusPathExpanded(
+                    old,
+                    item.id,
+                    childrenByParent,
+                    moduleById,
+                    systemModule.id,
+                    { includeSelf: false },
+                  );
+                  return studio.setsEqual(next, old) ? old : next;
+                });
+              }}
             >
               <strong>{item.name}</strong>
               <span>{item.layer} · L{item.level}</span>
@@ -1318,6 +1517,9 @@ function App() {
             >
               {focusMode ? "Exit Focus" : "Focus Mode"}
             </button>
+            <button type="button" onClick={() => setShowLanes((value) => !value)} disabled={focusMode}>
+              {showLanes ? "Hide Lanes" : "Show Lanes"}
+            </button>
             <button type="button" onClick={() => setZoom((value) => studio.clampZoom(value - 0.1))}>-</button>
             <span>{Math.round(zoom * 100)}%</span>
             <button type="button" onClick={() => setZoom((value) => studio.clampZoom(value + 0.1))}>+</button>
@@ -1325,10 +1527,11 @@ function App() {
             <span className="zoom-hint">Ctrl+Wheel Zoom</span>
             <button type="button" onClick={resetCurrentLayout}>Auto Layout</button>
             <button type="button" onClick={resetAllLayouts}>Reset All</button>
+            <button type="button" onClick={collapseAllExpanded}>Collapse All</button>
             <button type="button" onClick={() => setShowEdgeLabels((old) => !old)}>
               {showEdgeLabels ? "Hide Labels" : "Show Labels"}
             </button>
-            <button type="button" onClick={exportCurrentSvg}>Export SVG</button>
+            <button type="button" onClick={() => setAutoHidePins((old) => !old)}>{autoHidePins ? "Pins Auto" : "Pins All"}</button>
             <div className="edge-density-control">
               <label htmlFor="edge-min-count">Min Link Weight</label>
               <input
@@ -1394,20 +1597,34 @@ function App() {
                 {index > 0 && <span className="crumb-sep">/</span>}
                 <button
                   type="button"
-                  className={`crumb ${item.id === currentParentId ? "active" : ""}`}
+                  className={`crumb ${item.id === breadcrumbAnchorId ? "active" : ""}`}
                   onClick={() => jumpToCrumb(item.id)}
                 >
-                  {item.name}
+                  <span className="crumb-title">{item.name}</span>
+                  <span className="crumb-level">L{item.level}</span>
                 </button>
+                {item.level > 0 && hasChildren(item.id) && (
+                  <button
+                    type="button"
+                    className={`crumb-toggle ${expandedModuleIds.has(item.id) ? "expanded" : "collapsed"}`}
+                    aria-label={`${expandedModuleIds.has(item.id) ? "Collapse" : "Expand"} ${item.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleModuleExpand(item.id);
+                    }}
+                  >
+                    {expandedModuleIds.has(item.id) ? "-" : "+"}
+                  </button>
+                )}
               </span>
             ))}
           </div>
           <div className="drillbar-meta">
-            <strong>Focus L{currentDepth}</strong>
+            <strong>Selected L{currentDepth}</strong>
             <span>{scopedNodes.length} modules</span>
             <span>{visibleEdges.length} links</span>
             <span>Drag modules to rearrange · dblclick to expand/collapse</span>
-            {moduleById[currentParentId]?.parent_id && (
+            {moduleById[breadcrumbAnchorId]?.parent_id && (
               <button type="button" onClick={drillUpOneLevel}>Up</button>
             )}
           </div>
@@ -1485,9 +1702,18 @@ function App() {
                     width={Math.max(1, Math.round(renderLayout.width * zoom) + 600)}
                     height={Math.max(1, Math.round(renderLayout.height * zoom) + 360)}
                     viewBox={`0 0 ${renderLayout.width} ${renderLayout.height}`}
-                    onPointerMove={moveNodeDrag}
-                    onPointerUp={finishNodeDrag}
-                    onPointerCancel={finishNodeDrag}
+                    onPointerMove={(event) => {
+                      moveNodeDrag(event);
+                      moveGroupDrag(event);
+                    }}
+                    onPointerUp={(event) => {
+                      finishNodeDrag(event);
+                      finishGroupDrag(event);
+                    }}
+                    onPointerCancel={(event) => {
+                      finishNodeDrag(event);
+                      finishGroupDrag(event);
+                    }}
                     onPointerLeave={() => {
                       setHoverNodeId("");
                       setHoverCard(null);
@@ -1497,66 +1723,22 @@ function App() {
                       setActivePortFocus(null);
                     }}
                   >
-                <defs>
-                  <marker
-                    id="arrow-dep"
-                    markerWidth="5.8"
-                    markerHeight="5"
-                    refX="5.3"
-                    refY="2.5"
-                    orient="auto"
-                    markerUnits="userSpaceOnUse"
-                  >
-                    <polygon points="0,0 5.8,2.5 0,5" fill="#2c3948" />
-                  </marker>
-                  <marker
-                    id="arrow-intf"
-                    markerWidth="6.4"
-                    markerHeight="5.6"
-                    refX="5.9"
-                    refY="2.8"
-                    orient="auto"
-                    markerUnits="userSpaceOnUse"
-                  >
-                    <polygon points="0,0 6.4,2.8 0,5.6" fill="#2f6fa5" />
-                  </marker>
-                  <marker
-                    id="arrow-file"
-                    markerWidth="5.8"
-                    markerHeight="5"
-                    refX="5.3"
-                    refY="2.5"
-                    orient="auto"
-                    markerUnits="userSpaceOnUse"
-                  >
-                    <polygon points="0,0 5.8,2.5 0,5" fill="#b56f1f" />
-                  </marker>
-                  <marker
-                    id="arrow-other"
-                    markerWidth="5.8"
-                    markerHeight="5"
-                    refX="5.3"
-                    refY="2.5"
-                    orient="auto"
-                    markerUnits="userSpaceOnUse"
-                  >
-                    <polygon points="0,0 5.8,2.5 0,5" fill="#5f6c7b" />
-                  </marker>
-                </defs>
-                  {renderLayout.lanes.map((lane) => (
+                <DiagramDefs />
+                  {showLanes && renderLayout.lanes.map((lane) => (
                     <g key={lane.layer}>
                       <rect x={lane.x} y={lane.y} width={lane.width} height={lane.height} rx="18" className="lane" />
                       <text x={lane.x + 16} y={lane.y + 30} className="lane-title">{lane.layer}</text>
                     </g>
                   ))}
                   {(renderLayout.moduleContainers || []).map((container) => {
-                    const focused = container.id === currentParentId;
+                    const focused = container.id === activeContainerId;
+                    const inChain = activeContainerIdSet.has(container.id);
                     return (
                       <g
                         key={`container-body-${container.id}`}
                         data-id={container.id}
                         data-parent-id={container.parentId || ""}
-                        className={`module-container module-container-body-layer ${focused ? "focused" : ""}`}
+                        className={`module-container module-container-body-layer ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
                       >
                         <rect
                           x={container.x}
@@ -1565,6 +1747,15 @@ function App() {
                           height={container.height}
                           rx="16"
                           className="module-container-body"
+                        />
+                        <rect
+                          x={container.x}
+                          y={container.y}
+                          width={container.width}
+                          height={container.height}
+                          rx="16"
+                          className="module-container-hitbox"
+                          onPointerDown={(event) => startGroupDrag(event, container.id)}
                         />
                       </g>
                     );
@@ -1716,64 +1907,13 @@ function App() {
                   </g>
                 );
               })}
-                  {(renderLayout.moduleContainers || []).map((container) => {
-                    const focused = container.id === currentParentId;
-                    const canToggle = container.id !== currentParentId && hasChildren(container.id);
-                    const isExpanded = expandedModuleIds.has(container.id);
-                    const rawTitle = `${moduleById[container.id]?.name || container.name || container.id} · L${container.level}`;
-                    const maxTitleUnits = Math.max(12, Math.floor((container.width - (canToggle ? 64 : 36)) / 7));
-                    const title = studio.clipByUnits(rawTitle, maxTitleUnits);
-                    const minHeaderWidth = 110;
-                    const maxHeaderWidth = Math.max(minHeaderWidth, container.width - 24);
-                    const headerWidth = Math.min(
-                      maxHeaderWidth,
-                      Math.max(minHeaderWidth, studio.textUnits(title) * 7 + (canToggle ? 40 : 18)),
-                    );
-                    const headerX = container.x + 12;
-                    const headerY = container.y + 10;
-                    const headerHeight = 20;
-                    const toggleX = headerX + headerWidth - 18;
-                    const toggleY = headerY + 3;
-                    return (
-                      <g
-                        key={`container-header-${container.id}`}
-                        data-id={container.id}
-                        data-parent-id={container.parentId || ""}
-                        className={`module-container module-container-header-layer ${focused ? "focused" : ""}`}
-                      >
-                        <rect
-                          x={headerX}
-                          y={headerY}
-                          width={headerWidth}
-                          height={headerHeight}
-                          rx="10"
-                          className="module-container-header-bg"
-                        />
-                        <text
-                          x={headerX + 10}
-                          y={headerY + 14}
-                          textAnchor="start"
-                          className="module-container-header-title"
-                        >
-                          {title}
-                        </text>
-                        {canToggle && (
-                          <g
-                            className="module-container-toggle"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleModuleExpand(container.id);
-                            }}
-                          >
-                            <rect x={toggleX} y={toggleY} width="14" height="14" rx="7" className="module-container-toggle-bg" />
-                            <text x={toggleX + 7} y={toggleY + 10} textAnchor="middle" className="module-container-toggle-text">
-                              {isExpanded ? "-" : "+"}
-                            </text>
-                          </g>
-                        )}
-                      </g>
-                    );
-                  })}
+                  <ModuleContainerHeaders
+                    containers={renderLayout.moduleContainers || []}
+                    activeContainerId={activeContainerId}
+                    activeContainerIdSet={activeContainerIdSet}
+                    onCollapseContainer={collapseContainer}
+                    onDragContainer={(event, containerId) => startGroupDrag(event, containerId)}
+                  />
                   {renderLayout.nodes.map((node) => {
                   const isActive = node.id === selectedModuleId;
                   const canExpand = hasChildren(node.id);
@@ -1788,9 +1928,13 @@ function App() {
                   const outBadgeWidth = Math.max(62, outBadgeLabel.length * 6.1 + 14);
                   const badgeY = node.y + node.height - 23;
                   const hintY = node.y + node.height - (outerOutCount > 0 ? 28 : 12);
+                  const titleX = node.x + (canExpand ? 46 : 14);
                   const isHoveredNode = hoverNodeId === node.id;
-                  const isNeighborNode = hoverContext.neighborIds.has(node.id);
+                  const isNeighborNode = hoverContext.neighborIds.has(node.id) || selectionNeighborIds.has(node.id);
                   const dimmedByHover = hoverNodeId && !isHoveredNode && !isNeighborNode;
+                  const dimmedBySelection = (!hoverNodeId && selectedIsVisible && selectedModuleId && node.id !== selectedModuleId && !isNeighborNode);
+                  const showPins = !autoHidePins || isActive || isHoveredNode || isNeighborNode || (activePortFocus && activePortFocus.nodeId === node.id);
+                  const dimmed = dimmedByHover || dimmedBySelection;
                   const nodeClasses = [
                     "node",
                     isActive ? "active" : "",
@@ -1801,11 +1945,12 @@ function App() {
                     draggingNodeId === node.id ? "dragging" : "",
                     isHoveredNode ? "hovered" : "",
                     isNeighborNode ? "neighbor" : "",
-                    dimmedByHover ? "dimmed" : "",
+                    dimmed ? "dimmed" : "",
                   ].filter(Boolean).join(" ");
                     return (
                       <g
                         key={node.id}
+                        data-id={node.id}
                         className={nodeClasses}
                         onClick={() => activateNode(node.id)}
                         onDoubleClick={(event) => {
@@ -1830,24 +1975,17 @@ function App() {
                       >
                       <rect x={node.x} y={node.y} width={node.width} height={node.height} rx="14" className="node-body" />
                       <rect x={node.x + 1} y={node.y + 1} width={node.width - 2} height="30" rx="12" className="node-header" />
-                      <text x={node.x + 14} y={node.y + 26} className="title">{studio.clipByUnits(node.name, node.portTextUnits + 1)}</text>
+                      <text x={titleX} y={node.y + 26} className="title">{studio.clipByUnits(node.name, node.portTextUnits + 1)}</text>
                       <text x={node.x + 14} y={node.y + 46} className="meta">Layer: {node.layer} · L{node.level}</text>
-                      {node.summaryLines.map((line, idx) => (
+                      {showPins && node.summaryLines.map((line, idx) => (
                         <text key={`summary-${node.id}-${line}-${idx}`} x={node.x + 14} y={node.y + node.summaryY + idx * 14} className="summary-line">
                           {line}
                         </text>
                       ))}
-                      {!!node.summaryLines.length && (
-                        <text
-                          x={node.x + node.width - 14}
-                          y={node.y + node.summaryY}
-                          textAnchor="end"
-                          className={`summary-tag ${node.summarySource === "llm" ? "llm" : "fallback"}`}
-                        >
-                          {node.summarySource === "llm" ? "LLM" : "Fallback"}
-                        </text>
+                      {showPins && !!node.summaryLines.length && (
+                        <text x={node.x + node.width - 14} y={node.y + node.summaryY} textAnchor="end" className={`summary-tag ${node.summarySource === "llm" ? "llm" : "fallback"}`}>{node.summarySource === "llm" ? "LLM" : "Fallback"}</text>
                       )}
-                      {node.displayInPorts.map((port, idx) => {
+                      {showPins && node.displayInPorts.map((port, idx) => {
                         const visualState = getPortVisualState(node.id, port, "in");
                         const isBus = studio.isInterfaceProtocol(port.protocol);
                         const portY = node.portStartY + idx * 16 - 4;
@@ -1862,6 +2000,14 @@ function App() {
                                   ? null
                                   : { nodeId: node.id, portId, direction: "in" }
                               ));
+                            }}
+                            onDoubleClick={(event) => {
+                              event.stopPropagation();
+                              event.preventDefault();
+                              const portId = port.id || `in-${port.name}-${port.protocol}`;
+                              setActivePortFocus({ nodeId: node.id, portId, direction: "in" });
+                              setEdgeScope("selected");
+                              setSelectedAroundHops((old) => (old < 1 ? 1 : old));
                             }}
                           >
                             <line
@@ -1894,7 +2040,7 @@ function App() {
                           </g>
                         );
                       })}
-                      {node.inOverflow > 0 && (
+                      {showPins && node.inOverflow > 0 && (
                         <text
                           x={node.x + 14}
                           y={node.portStartY + node.displayInPorts.length * 16}
@@ -1903,7 +2049,7 @@ function App() {
                           +{node.inOverflow} more
                         </text>
                       )}
-                      {node.displayOutPorts.map((port, idx) => {
+                      {showPins && node.displayOutPorts.map((port, idx) => {
                         const visualState = getPortVisualState(node.id, port, "out");
                         const isBus = studio.isInterfaceProtocol(port.protocol);
                         const portY = node.portStartY + idx * 16 - 4;
@@ -1918,6 +2064,14 @@ function App() {
                                   ? null
                                   : { nodeId: node.id, portId, direction: "out" }
                               ));
+                            }}
+                            onDoubleClick={(event) => {
+                              event.stopPropagation();
+                              event.preventDefault();
+                              const portId = port.id || `out-${port.name}-${port.protocol}`;
+                              setActivePortFocus({ nodeId: node.id, portId, direction: "out" });
+                              setEdgeScope("selected");
+                              setSelectedAroundHops((old) => (old < 1 ? 1 : old));
                             }}
                           >
                             <line
@@ -1951,7 +2105,7 @@ function App() {
                           </g>
                         );
                       })}
-                      {node.outOverflow > 0 && (
+                      {showPins && node.outOverflow > 0 && (
                         <text
                           x={node.x + node.width - 14}
                           y={node.portStartY + node.displayOutPorts.length * 16}
@@ -1970,7 +2124,7 @@ function App() {
                           }}
                         >
                           <rect
-                            x={node.x + node.width - 36}
+                            x={node.x + 12}
                             y={node.y + 8}
                             width="24"
                             height="14"
@@ -1978,7 +2132,7 @@ function App() {
                             className="expand-toggle-bg"
                           />
                           <text
-                            x={node.x + node.width - 24}
+                            x={node.x + 24}
                             y={node.y + 18}
                             textAnchor="middle"
                             className="expand-toggle-text"
@@ -2044,10 +2198,10 @@ function App() {
                           x={node.x + node.width - 12}
                           y={hintY}
                           textAnchor="end"
-                          className="drill-hint"
-                        >
-                          dblclick to zoom
-                        </text>
+                        className="drill-hint"
+                      >
+                          dblclick to expand/collapse
+                      </text>
                       )}
                       </g>
                     );

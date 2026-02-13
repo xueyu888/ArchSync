@@ -506,12 +506,44 @@ button.active-focus-toggle {
   padding: 5px 10px;
   font-size: 12px;
   font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .crumb.active {
   border-color: #7db3e4;
   color: #1d4f7b;
   background: #e9f3ff;
+}
+
+.crumb-level {
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: rgba(47, 78, 107, 0.92);
+  background: rgba(212, 226, 240, 0.72);
+  border: 1px solid rgba(136, 166, 196, 0.48);
+}
+
+.crumb-toggle {
+  border-radius: 999px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  border: 1px solid rgba(84, 123, 161, 0.6);
+  background: rgba(216, 234, 249, 0.85);
+  color: #244666;
+}
+
+.crumb-toggle.expanded {
+  border-color: rgba(193, 110, 62, 0.75);
+  background: rgba(254, 231, 212, 0.9);
+  color: #8f4d2d;
 }
 
 .drillbar-meta {
@@ -841,7 +873,12 @@ button.active-focus-toggle {
 }
 
 .module-container.module-container-header-layer {
-  pointer-events: none;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.module-container.module-container-header-layer:active {
+  cursor: grabbing;
 }
 
 .module-container .module-container-body {
@@ -849,6 +886,23 @@ button.active-focus-toggle {
   stroke: rgba(86, 120, 154, 0.42);
   stroke-width: 1.1;
   stroke-dasharray: 6 5;
+}
+
+.module-container .module-container-hitbox {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0);
+  stroke-width: 14px;
+  pointer-events: stroke;
+  cursor: grab;
+}
+
+.module-container .module-container-hitbox:active {
+  cursor: grabbing;
+}
+
+.module-container.chain .module-container-body {
+  stroke: rgba(86, 120, 154, 0.58);
+  stroke-width: 1.15;
 }
 
 .module-container.focused .module-container-body {
@@ -862,6 +916,10 @@ button.active-focus-toggle {
   stroke: rgba(126, 157, 187, 0.9);
   stroke-width: 1;
   pointer-events: none;
+}
+
+.module-container.chain .module-container-header-bg {
+  stroke: rgba(126, 157, 187, 0.98);
 }
 
 .module-container.focused .module-container-header-bg {
@@ -898,6 +956,61 @@ button.active-focus-toggle {
 }
 
 .module-container .module-container-toggle-text {
+  fill: #244666;
+  font-size: 10px;
+  font-weight: 800;
+  font-family: "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
+  pointer-events: none;
+}
+
+.hierarchy-rail {
+  pointer-events: none;
+}
+
+.hierarchy-chip {
+  pointer-events: none;
+}
+
+.hierarchy-chip .hierarchy-chip-bg {
+  fill: rgba(245, 250, 255, 0.96);
+  stroke: rgba(126, 157, 187, 0.9);
+  stroke-width: 1;
+}
+
+.hierarchy-chip.active .hierarchy-chip-bg {
+  fill: rgba(255, 245, 236, 0.97);
+  stroke: rgba(201, 122, 72, 0.92);
+}
+
+.hierarchy-chip .hierarchy-chip-title {
+  fill: #2f4e6b;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
+  pointer-events: none;
+}
+
+.hierarchy-chip.active .hierarchy-chip-title {
+  fill: #8f4d2d;
+}
+
+.hierarchy-chip .hierarchy-chip-toggle {
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.hierarchy-chip .hierarchy-chip-toggle-bg {
+  fill: rgba(216, 234, 249, 0.95);
+  stroke: rgba(84, 123, 161, 0.92);
+  stroke-width: 1;
+}
+
+.hierarchy-chip.active .hierarchy-chip-toggle-bg {
+  fill: rgba(254, 231, 212, 0.96);
+  stroke: rgba(193, 110, 62, 0.9);
+}
+
+.hierarchy-chip .hierarchy-chip-toggle-text {
   fill: #244666;
   font-size: 10px;
   font-weight: 800;
