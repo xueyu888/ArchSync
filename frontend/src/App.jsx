@@ -1904,10 +1904,11 @@ function App() {
                 );
               })}
                   <ModuleContainerHeaders
-                    containers={activeContainerChain.map((id) => containerById[id]).filter(Boolean)}
-                    maxWidth={renderLayout.width}
+                    containers={renderLayout.moduleContainers || []}
+                    activeContainerIdSet={activeContainerIdSet}
                     activeContainerId={activeContainerId}
                     onCollapseContainer={collapseContainer}
+                    onDragContainer={(event, containerId) => startGroupDrag(event, containerId)}
                   />
                   {renderLayout.nodes.map((node) => {
                   const isActive = node.id === selectedModuleId;
