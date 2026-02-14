@@ -1731,12 +1731,22 @@ function App() {
                   {(renderLayout.moduleContainers || []).map((container) => {
                     const focused = container.id === activeContainerId;
                     const inChain = activeContainerIdSet.has(container.id);
+                    const level = Math.max(1, Number(container.level || 1));
+                    const baseStrokeWidth = Math.min(3.1, 1.4 + (level - 1) * 0.13);
+                    const chainStrokeWidth = baseStrokeWidth + 0.2;
+                    const focusedStrokeWidth = baseStrokeWidth + 0.6;
                     return (
                       <g
                         key={`container-body-${container.id}`}
                         data-id={container.id}
                         data-parent-id={container.parentId || ""}
+                        data-level={String(level)}
                         className={`module-container module-container-body-layer ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
+                        style={{
+                          "--container-stroke-width": `${baseStrokeWidth}px`,
+                          "--container-stroke-width-chain": `${chainStrokeWidth}px`,
+                          "--container-stroke-width-focused": `${focusedStrokeWidth}px`,
+                        }}
                       >
                         <rect
                           x={container.x}

@@ -884,7 +884,7 @@ button.active-focus-toggle {
 .module-container .module-container-body {
   fill: rgba(209, 225, 243, 0.12);
   stroke: rgba(86, 120, 154, 0.42);
-  stroke-width: 1.1;
+  stroke-width: var(--container-stroke-width, 1.5px);
   stroke-dasharray: 6 5;
 }
 
@@ -902,13 +902,16 @@ button.active-focus-toggle {
 
 .module-container.chain .module-container-body {
   stroke: rgba(86, 120, 154, 0.58);
-  stroke-width: 1.15;
+  stroke-width: var(--container-stroke-width-chain, 1.7px);
 }
 
 .module-container.focused .module-container-body {
   fill: rgba(248, 226, 206, 0.22);
   stroke: rgba(216, 101, 53, 0.58);
-  stroke-width: 1.3;
+  stroke-width: var(--container-stroke-width-focused, 2.1px);
+  filter:
+    drop-shadow(0 4px 8px rgba(183, 93, 53, 0.24))
+    drop-shadow(0 0 7px rgba(216, 101, 53, 0.36));
 }
 
 .module-container .module-container-header-bg {
