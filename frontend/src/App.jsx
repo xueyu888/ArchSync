@@ -1732,9 +1732,9 @@ function App() {
                     const focused = container.id === activeContainerId;
                     const inChain = activeContainerIdSet.has(container.id);
                     const level = Math.max(1, Number(container.level || 1));
-                    const baseStrokeWidth = Math.min(3.1, 1.4 + (level - 1) * 0.13);
-                    const chainStrokeWidth = baseStrokeWidth + 0.2;
-                    const focusedStrokeWidth = baseStrokeWidth + 0.6;
+                    const baseStrokeWidth = Math.min(4.2, 1.85 + (level - 1) * 0.2);
+                    const chainStrokeWidth = baseStrokeWidth + 0.35;
+                    const focusedStrokeWidth = baseStrokeWidth + 0.95;
                     return (
                       <g
                         key={`container-body-${container.id}`}
@@ -1748,6 +1748,16 @@ function App() {
                           "--container-stroke-width-focused": `${focusedStrokeWidth}px`,
                         }}
                       >
+                        {focused && (
+                          <rect
+                            x={container.x}
+                            y={container.y}
+                            width={container.width}
+                            height={container.height}
+                            rx="16"
+                            className="module-container-body-glow"
+                          />
+                        )}
                         <rect
                           x={container.x}
                           y={container.y}

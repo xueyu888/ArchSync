@@ -883,9 +883,18 @@ button.active-focus-toggle {
 
 .module-container .module-container-body {
   fill: rgba(209, 225, 243, 0.12);
-  stroke: rgba(86, 120, 154, 0.42);
-  stroke-width: var(--container-stroke-width, 1.5px);
-  stroke-dasharray: 6 5;
+  stroke: rgba(86, 120, 154, 0.9);
+  stroke-width: var(--container-stroke-width, 1.9px);
+  stroke-dasharray: none;
+}
+
+.module-container .module-container-body-glow {
+  fill: none;
+  stroke: rgba(214, 112, 67, 0.86);
+  stroke-width: calc(var(--container-stroke-width-focused, 2.8px) + 4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
 }
 
 .module-container .module-container-hitbox {
@@ -901,17 +910,24 @@ button.active-focus-toggle {
 }
 
 .module-container.chain .module-container-body {
-  stroke: rgba(86, 120, 154, 0.58);
-  stroke-width: var(--container-stroke-width-chain, 1.7px);
+  stroke: rgba(86, 120, 154, 0.96);
+  stroke-width: var(--container-stroke-width-chain, 2.15px);
 }
 
 .module-container.focused .module-container-body {
   fill: rgba(248, 226, 206, 0.22);
-  stroke: rgba(216, 101, 53, 0.58);
-  stroke-width: var(--container-stroke-width-focused, 2.1px);
+  stroke: rgba(216, 101, 53, 0.95);
+  stroke-width: var(--container-stroke-width-focused, 2.8px);
   filter:
-    drop-shadow(0 4px 8px rgba(183, 93, 53, 0.24))
-    drop-shadow(0 0 7px rgba(216, 101, 53, 0.36));
+    drop-shadow(0 8px 14px rgba(183, 93, 53, 0.46))
+    drop-shadow(0 0 16px rgba(216, 101, 53, 0.58));
+}
+
+.module-container.focused .module-container-body-glow {
+  opacity: 1;
+  filter:
+    drop-shadow(0 0 14px rgba(216, 101, 53, 0.62))
+    drop-shadow(0 0 24px rgba(216, 101, 53, 0.38));
 }
 
 .module-container .module-container-header-bg {
