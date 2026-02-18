@@ -934,7 +934,8 @@ button.active-focus-toggle {
   fill: rgba(245, 250, 255, 0.96);
   stroke: rgba(126, 157, 187, 0.9);
   stroke-width: 1;
-  pointer-events: none;
+  /* Keep headers hoverable/clickable (used to reveal container resize handles). */
+  pointer-events: all;
 }
 
 .module-container.chain .module-container-header-bg {
@@ -1058,7 +1059,7 @@ button.active-focus-toggle {
 }
 
 .hierarchy-chip {
-  pointer-events: none;
+  pointer-events: all;
 }
 
 .hierarchy-chip .hierarchy-chip-bg {
@@ -1373,17 +1374,19 @@ button.active-focus-toggle {
 }
 
 .container-resize-handle .frame-resize-hit {
-  /* Keep container handles visible but avoid "masking" long border-parallel traces. */
-  fill: rgba(245, 250, 255, 0.38);
+  fill: rgba(245, 250, 255, 0.86);
 }
 
 .container-resize-handle {
-  opacity: 0.18;
+  opacity: 0.55;
 }
 
-.container-resize-handle.chain,
+.container-resize-handle.chain {
+  opacity: 0.45;
+}
+
 .container-resize-handle.focused {
-  opacity: 0.6;
+  opacity: 0.86;
 }
 
 .node-expand-toggle {

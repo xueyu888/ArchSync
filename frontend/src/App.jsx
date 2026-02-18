@@ -39,6 +39,7 @@ function App() {
   const [panningCanvas, setPanningCanvas] = useState(false);
   const [hoverCard, setHoverCard] = useState(null);
   const [hoverNodeId, setHoverNodeId] = useState("");
+  const [hoverContainerId, setHoverContainerId] = useState("");
   const [activePortFocus, setActivePortFocus] = useState(null);
   const [moduleEdits, setModuleEdits] = useState({});
   const [dockTab, setDockTab] = useState("console");
@@ -55,6 +56,14 @@ function App() {
   const resizeRef = useRef(null);
   const panRef = useRef(null);
   const suppressClickRef = useRef(false);
+  const hoverContainerClearRef = useRef(null);
+
+  useEffect(() => () => {
+    if (hoverContainerClearRef.current) {
+      clearTimeout(hoverContainerClearRef.current);
+      hoverContainerClearRef.current = null;
+    }
+  }, []);
   const effectiveModules = useMemo(() => {
     return (model?.modules || []).map((item) => {
       const edit = moduleEdits[item.id] || {};
@@ -980,6 +989,28 @@ function App() {
     setFocusedModuleId("");
     setExpandedModuleIds(new Set());
   }
+  const showContainerHover = useCallback((containerId) => {
+    if (!containerId) {
+      return;
+    }
+    if (hoverContainerClearRef.current) {
+      clearTimeout(hoverContainerClearRef.current);
+      hoverContainerClearRef.current = null;
+    }
+    setHoverContainerId(containerId);
+  }, []);
+  const hideContainerHoverSoon = useCallback((containerId) => {
+    if (!containerId) {
+      return;
+    }
+    if (hoverContainerClearRef.current) {
+      clearTimeout(hoverContainerClearRef.current);
+    }
+    hoverContainerClearRef.current = setTimeout(() => {
+      setHoverContainerId((old) => (old === containerId ? "" : old));
+      hoverContainerClearRef.current = null;
+    }, 90);
+  }, []);
   function showNodeHover(event, nodeId) {
     setHoverNodeId(nodeId);
     const summary = llmSummaries[nodeId];
@@ -1131,6 +1162,10 @@ function App() {
     if (!memberIds.length) {
       return;
     }
+    setSelectedEdgeId("");
+    setActivePortFocus(null);
+    setSelectedModuleId(containerId);
+    setFocusedModuleId(containerId);
     const point = toSvgPoint(event.clientX, event.clientY);
     if (!point) {
       return;
@@ -2105,7 +2140,14 @@ function App() {
                 if (!(target instanceof Element)) {
                   return;
                 }
-                if (target.closest("g.node") || target.closest("g.edge-group")) {
+                if (
+                  target.closest("g.node")
+                  || target.closest("g.edge-group")
+                  || target.closest("g.module-container-body-layer")
+                  || target.closest("g.module-container-header-layer")
+                  || target.closest("g.module-container-toggle")
+                  || target.closest("g.frame-resize-handle")
+                ) {
                   return;
                 }
                 // Consume synthetic clicks triggered after pans/drags.
@@ -2200,6 +2242,8 @@ function App() {
                           rx="16"
                           className="module-container-hitbox"
                           onPointerDown={(event) => startGroupDrag(event, container.id)}
+                          onPointerOver={() => showContainerHover(container.id)}
+                          onPointerOut={() => hideContainerHoverSoon(container.id)}
                         />
                       </g>
                     );
@@ -2356,6 +2400,13 @@ function App() {
                     activeContainerId={activeContainerId}
                     onCollapseContainer={collapseContainer}
                     onDragContainer={(event, containerId) => startGroupDrag(event, containerId)}
+                    onHoverContainer={(containerId, hovering) => {
+                      if (hovering) {
+                        showContainerHover(containerId);
+                      } else {
+                        hideContainerHoverSoon(containerId);
+                      }
+                    }}
                   />
                   {renderLayout.nodes.map((node) => {
                   const isFocusedNode = node.id === focusedModuleId;
@@ -2843,28 +2894,36 @@ function App() {
                     }
                     const focused = container.id === activeContainerId;
                     const inChain = activeContainerIdSet.has(container.id);
+                    const hovered = hoverContainerId === container.id;
+                    const showHandles = focused || hovered;
+                    if (!showHandles) {
+                      return null;
+                    }
                     const handleSize = 16;
                     const handleX = container.x + container.width - handleSize - 6;
                     const handleY = container.y + container.height - handleSize - 6;
                     const edgeThickness = 10;
+                    const edgeThicknessHalf = edgeThickness / 2;
                     const edgeLength = 28;
                     const edgeRadius = 5;
                     const midX = container.x + container.width / 2;
                     const midY = container.y + container.height / 2;
-                    const leftGripX = container.x - 22;
+                    const leftGripX = container.x - edgeThicknessHalf;
                     const leftGripY = midY - edgeLength / 2;
-                    const rightGripX = container.x + container.width + 12;
+                    const rightGripX = container.x + container.width - edgeThicknessHalf;
                     const rightGripY = midY - edgeLength / 2;
                     const topGripX = midX - edgeLength / 2;
-                    const topGripY = container.y - 22;
+                    const topGripY = container.y - edgeThicknessHalf;
                     const bottomGripX = midX - edgeLength / 2;
-                    const bottomGripY = container.y + container.height + 12;
+                    const bottomGripY = container.y + container.height - edgeThicknessHalf;
                     return (
                       <g key={`container-resize-${container.id}`}>
                         <g
                           data-id={container.id}
                           className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
                           data-edge="left"
+                          onPointerOver={() => showContainerHover(container.id)}
+                          onPointerOut={() => hideContainerHoverSoon(container.id)}
                           onPointerDown={(event) => startFrameResize(event, {
                             kind: "container",
                             id: container.id,
@@ -2898,6 +2957,8 @@ function App() {
                           data-id={container.id}
                           className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
                           data-edge="right"
+                          onPointerOver={() => showContainerHover(container.id)}
+                          onPointerOut={() => hideContainerHoverSoon(container.id)}
                           onPointerDown={(event) => startFrameResize(event, {
                             kind: "container",
                             id: container.id,
@@ -2931,6 +2992,8 @@ function App() {
                           data-id={container.id}
                           className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
                           data-edge="top"
+                          onPointerOver={() => showContainerHover(container.id)}
+                          onPointerOut={() => hideContainerHoverSoon(container.id)}
                           onPointerDown={(event) => startFrameResize(event, {
                             kind: "container",
                             id: container.id,
@@ -2964,6 +3027,8 @@ function App() {
                           data-id={container.id}
                           className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
                           data-edge="bottom"
+                          onPointerOver={() => showContainerHover(container.id)}
+                          onPointerOut={() => hideContainerHoverSoon(container.id)}
                           onPointerDown={(event) => startFrameResize(event, {
                             kind: "container",
                             id: container.id,
@@ -2997,6 +3062,8 @@ function App() {
                           data-id={container.id}
                           className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
                           data-edge="br"
+                          onPointerOver={() => showContainerHover(container.id)}
+                          onPointerOut={() => hideContainerHoverSoon(container.id)}
                           onPointerDown={(event) => startFrameResize(event, {
                             kind: "container",
                             id: container.id,

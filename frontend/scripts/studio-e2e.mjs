@@ -343,6 +343,14 @@ async function main() {
         return "";
       });
       if (resizeContainerId) {
+        // Container resize handles are intentionally hidden unless the frame is focused/hovered.
+        const header = page.locator(`svg.diagram g.hierarchy-chip[data-id="${resizeContainerId}"] rect.hierarchy-chip-bg`).first();
+        if (await header.count()) {
+          await header.scrollIntoViewIfNeeded();
+          await header.hover({ force: true });
+          await page.waitForTimeout(120);
+        }
+
         const cBefore = await page.evaluate((id) => {
           const rect = document.querySelector(`svg.diagram g.module-container-body-layer[data-id="${id}"] rect.module-container-body`);
           if (!rect || typeof rect.getBBox !== "function") return null;

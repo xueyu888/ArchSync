@@ -7,6 +7,7 @@ export function ModuleContainerHeaders({
   activeContainerIdSet = new Set(),
   onCollapseContainer,
   onDragContainer,
+  onHoverContainer,
 }) {
   if (!containers?.length) {
     return null;
@@ -48,6 +49,14 @@ export function ModuleContainerHeaders({
             data-id={container.id}
             data-parent-id={container.parentId || ""}
             className={`module-container module-container-header-layer hierarchy-chip ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
+            onPointerOver={() => onHoverContainer?.(container.id, true)}
+            onPointerOut={(event) => {
+              const next = event.relatedTarget;
+              if (next instanceof Node && event.currentTarget?.contains(next)) {
+                return;
+              }
+              onHoverContainer?.(container.id, false);
+            }}
             onPointerDown={(event) => {
               if (!draggable) {
                 return;

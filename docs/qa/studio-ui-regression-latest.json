@@ -1,6 +1,6 @@
 {
   "studioUrl": "http://127.0.0.1:5173/",
-  "startedAt": "2026-02-18T16:22:10.652Z",
+  "startedAt": "2026-02-18T22:34:12.668Z",
   "screenshots": {
     "overview": "docs/qa/studio-ui-regression-latest-overview.png",
     "hierarchy": "docs/qa/studio-ui-regression-latest-hierarchy.png",
@@ -94,11 +94,11 @@
     "edgeNodeIntersectionCount": 0,
     "edgeNodeIntersections": []
   },
-  "finishedAt": "2026-02-18T16:22:32.312Z",
-  "sourceReport": "docs/qa/studio-ui-regression-2026-02-18T16-22-10-244Z.json",
+  "finishedAt": "2026-02-18T22:34:33.322Z",
+  "sourceReport": "docs/qa/studio-ui-regression-2026-02-18T22-34-12-587Z.json",
   "sourceScreenshots": {
-    "overview": "docs/qa/studio-ui-regression-2026-02-18T16-22-10-244Z-overview.png",
-    "hierarchy": "docs/qa/studio-ui-regression-2026-02-18T16-22-10-244Z-hierarchy.png",
-    "stress": "docs/qa/studio-ui-regression-2026-02-18T16-22-10-244Z-stress.png"
+    "overview": "docs/qa/studio-ui-regression-2026-02-18T22-34-12-587Z-overview.png",
+    "hierarchy": "docs/qa/studio-ui-regression-2026-02-18T22-34-12-587Z-hierarchy.png",
+    "stress": "docs/qa/studio-ui-regression-2026-02-18T22-34-12-587Z-stress.png"
   }
 }
