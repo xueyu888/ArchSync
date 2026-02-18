@@ -309,7 +309,7 @@ async function main() {
         return { width: bb.width, height: bb.height };
       }, resizeTargetId);
 
-      const handle = page.locator(`svg.diagram g.node[data-id="${resizeTargetId}"] g.node-resize-handle rect.frame-resize-hit`).first();
+      const handle = page.locator(`svg.diagram g.node[data-id="${resizeTargetId}"] g.node-resize-handle[data-edge="br"] rect.frame-resize-hit`).first();
       if (await handle.count()) {
         await handle.scrollIntoViewIfNeeded();
         const bb = await handle.boundingBox();
@@ -350,7 +350,7 @@ async function main() {
           return { width: bb.width, height: bb.height };
         }, resizeContainerId);
 
-        const cHandle = page.locator(`svg.diagram g.container-resize-handle[data-id="${resizeContainerId}"] rect.frame-resize-hit`).first();
+        const cHandle = page.locator(`svg.diagram g.container-resize-handle[data-id="${resizeContainerId}"][data-edge="br"] rect.frame-resize-hit`).first();
         if (await cHandle.count()) {
           await cHandle.scrollIntoViewIfNeeded();
           const bb = await cHandle.boundingBox();

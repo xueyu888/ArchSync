@@ -189,19 +189,48 @@ export function materializeExpandedContainers(containerDefs, nodeById, options =
       box = expandToContain(box, child, childInset);
     }
 
-    const minWidth = box.width;
-    const minHeight = box.height;
+    // Allow manual resizing to shrink a container's padding slightly, but never to the point
+    // where it would stop containing its members/children.
+    const minPadX = 16;
+    const minPadTop = 22;
+    const minPadBottom = 18;
+    const reqLeft = minX - minPadX;
+    const reqRight = maxX + minPadX;
+    const reqTop = minY - minPadTop;
+    const reqBottom = maxY + minPadBottom;
+    const minWidth = Math.max(220, reqRight - reqLeft);
+    const minHeight = Math.max(160, reqBottom - reqTop);
+
     const override = sizeOverridesById[defId];
+    const overrideX = override ? Number(override.x) : NaN;
+    const overrideY = override ? Number(override.y) : NaN;
     const overrideWidth = override ? Number(override.width) : NaN;
     const overrideHeight = override ? Number(override.height) : NaN;
-    const nextWidth = Number.isFinite(overrideWidth) ? Math.max(minWidth, overrideWidth) : minWidth;
-    const nextHeight = Number.isFinite(overrideHeight) ? Math.max(minHeight, overrideHeight) : minHeight;
+    let nextX = Number.isFinite(overrideX) ? overrideX : box.x;
+    let nextY = Number.isFinite(overrideY) ? overrideY : box.y;
+    let nextWidth = Number.isFinite(overrideWidth) ? overrideWidth : box.width;
+    let nextHeight = Number.isFinite(overrideHeight) ? overrideHeight : box.height;
+
+    nextWidth = Math.max(minWidth, nextWidth);
+    nextHeight = Math.max(minHeight, nextHeight);
+
+    // Clamp the manual box so it still contains its contents (using minimal safe padding).
+    if (nextX > reqLeft) nextX = reqLeft;
+    if (nextY > reqTop) nextY = reqTop;
+    if (nextX + nextWidth < reqRight) nextWidth = reqRight - nextX;
+    if (nextY + nextHeight < reqBottom) nextHeight = reqBottom - nextY;
+
+    nextWidth = Math.max(minWidth, nextWidth);
+    nextHeight = Math.max(minHeight, nextHeight);
+
     box = {
       ...box,
-      minWidth,
-      minHeight,
+      x: nextX,
+      y: nextY,
       width: nextWidth,
       height: nextHeight,
+      minWidth,
+      minHeight,
     };
 
     boxesById[defId] = box;

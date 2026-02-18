@@ -941,8 +941,8 @@ function App() {
       },
     }));
   }
-  function setModuleManualSize(moduleId, width, height) {
-    if (!currentParentId) {
+  function patchManualLayout(moduleId, patch) {
+    if (!currentParentId || !moduleId || !patch || typeof patch !== "object") {
       return;
     }
     setManualLayouts((old) => ({
@@ -951,8 +951,7 @@ function App() {
         ...(old[currentParentId] || {}),
         [moduleId]: {
           ...(old[currentParentId]?.[moduleId] || {}),
-          width,
-          height,
+          ...patch,
         },
       },
     }));
@@ -1226,6 +1225,8 @@ function App() {
     if (!point) {
       return;
     }
+    const startX = Number(frame.x) || 0;
+    const startY = Number(frame.y) || 0;
     const startWidth = Math.max(1, Number(frame.width) || 1);
     const startHeight = Math.max(1, Number(frame.height) || 1);
     const minWidth = Math.max(1, Number(frame.minWidth) || startWidth);
@@ -1235,11 +1236,16 @@ function App() {
       parentId: currentParentId,
       id: frame.id,
       kind: frame.kind || "node",
+      handle: frame.handle || "br",
       startPoint: point,
+      startX,
+      startY,
       startWidth,
       startHeight,
       minWidth,
       minHeight,
+      lastX: startX,
+      lastY: startY,
       lastWidth: startWidth,
       lastHeight: startHeight,
       moved: false,
@@ -1252,7 +1258,7 @@ function App() {
     setDragPreview({
       parentId: currentParentId,
       positions: {
-        [frame.id]: { width: startWidth, height: startHeight },
+        [frame.id]: { x: startX, y: startY, width: startWidth, height: startHeight },
       },
     });
     setHoverCard(null);
@@ -1270,17 +1276,77 @@ function App() {
     }
     const dx = point.x - resize.startPoint.x;
     const dy = point.y - resize.startPoint.y;
-    const nextWidth = Math.max(resize.minWidth, studio.snapToGrid(resize.startWidth + dx));
-    const nextHeight = Math.max(resize.minHeight, studio.snapToGrid(resize.startHeight + dy));
-    if (Math.abs(nextWidth - resize.lastWidth) > 1 || Math.abs(nextHeight - resize.lastHeight) > 1) {
+    const startLeft = resize.startX;
+    const startTop = resize.startY;
+    const startRight = resize.startX + resize.startWidth;
+    const startBottom = resize.startY + resize.startHeight;
+    let nextLeft = startLeft;
+    let nextTop = startTop;
+    let nextRight = startRight;
+    let nextBottom = startBottom;
+
+    switch (resize.handle) {
+      case "right": {
+        nextRight = studio.snapToGrid(startRight + dx);
+        break;
+      }
+      case "left": {
+        nextLeft = studio.snapToGrid(startLeft + dx);
+        break;
+      }
+      case "bottom": {
+        nextBottom = studio.snapToGrid(startBottom + dy);
+        break;
+      }
+      case "top": {
+        nextTop = studio.snapToGrid(startTop + dy);
+        break;
+      }
+      case "br":
+      default: {
+        nextRight = studio.snapToGrid(startRight + dx);
+        nextBottom = studio.snapToGrid(startBottom + dy);
+        break;
+      }
+    }
+
+    let nextWidth = Math.max(resize.minWidth, nextRight - nextLeft);
+    let nextHeight = Math.max(resize.minHeight, nextBottom - nextTop);
+    // When dragging the "left/top" edges, keep the opposite edge stable if we hit min sizes.
+    if (resize.handle === "left") {
+      nextLeft = startRight - nextWidth;
+    }
+    if (resize.handle === "top") {
+      nextTop = startBottom - nextHeight;
+    }
+    // Re-anchor the dependent edges after clamping.
+    if (resize.handle === "right" || resize.handle === "br") {
+      nextRight = nextLeft + nextWidth;
+    }
+    if (resize.handle === "bottom" || resize.handle === "br") {
+      nextBottom = nextTop + nextHeight;
+    }
+
+    const nextX = nextLeft;
+    const nextY = nextTop;
+    nextWidth = Math.max(1, nextWidth);
+    nextHeight = Math.max(1, nextHeight);
+    if (
+      Math.abs(nextX - resize.lastX) > 1
+      || Math.abs(nextY - resize.lastY) > 1
+      || Math.abs(nextWidth - resize.lastWidth) > 1
+      || Math.abs(nextHeight - resize.lastHeight) > 1
+    ) {
       resize.moved = true;
       suppressClickRef.current = true;
+      resize.lastX = nextX;
+      resize.lastY = nextY;
       resize.lastWidth = nextWidth;
       resize.lastHeight = nextHeight;
       setDragPreview({
         parentId: resize.parentId,
         positions: {
-          [resize.id]: { width: nextWidth, height: nextHeight },
+          [resize.id]: { x: nextX, y: nextY, width: nextWidth, height: nextHeight },
         },
       });
     }
@@ -1291,7 +1357,12 @@ function App() {
       return;
     }
     if (resize.moved && resize.parentId === currentParentId) {
-      setModuleManualSize(resize.id, resize.lastWidth, resize.lastHeight);
+      patchManualLayout(resize.id, {
+        x: resize.lastX,
+        y: resize.lastY,
+        width: resize.lastWidth,
+        height: resize.lastHeight,
+      });
     }
     resizeRef.current = null;
     setDragPreview(null);
@@ -2312,6 +2383,19 @@ function App() {
                   const handleSize = 16;
                   const handleX = node.x + node.width - handleSize - 6;
                   const handleY = node.y + node.height - handleSize - 6;
+                  const edgeThickness = 10;
+                  const edgeLength = 28;
+                  const edgeRadius = 5;
+                  const midX = node.x + node.width / 2;
+                  const midY = node.y + node.height / 2;
+                  const leftGripX = node.x - 22;
+                  const leftGripY = midY - edgeLength / 2;
+                  const rightGripX = node.x + node.width + 12;
+                  const rightGripY = midY - edgeLength / 2;
+                  const topGripX = midX - edgeLength / 2;
+                  const topGripY = node.y - 22;
+                  const bottomGripX = midX - edgeLength / 2;
+                  const bottomGripY = node.y + node.height + 12;
                   const nodeClasses = [
                     "node",
                     isFocusedNode ? "active" : "",
@@ -2588,15 +2672,341 @@ function App() {
                       </text>
                       )}
                       {showResizeHandle && (
+                        <>
+                          <g
+                            className="frame-resize-handle node-resize-handle"
+                            data-edge="left"
+                            onPointerDown={(event) => startFrameResize(event, {
+                              kind: "node",
+                              id: node.id,
+                              x: node.x,
+                              y: node.y,
+                              width: node.width,
+                              height: node.height,
+                              minWidth: node.minWidth,
+                              minHeight: node.minHeight,
+                              handle: "left",
+                            })}
+                          >
+                            <rect
+                              x={leftGripX}
+                              y={leftGripY}
+                              width={edgeThickness}
+                              height={edgeLength}
+                              rx={edgeRadius}
+                              className="frame-resize-hit frame-resize-edge-hit"
+                            />
+                            <path
+                              d={[
+                                `M ${leftGripX + 3} ${leftGripY + 9} L ${leftGripX + edgeThickness - 3} ${leftGripY + 9}`,
+                                `M ${leftGripX + 3} ${leftGripY + 14} L ${leftGripX + edgeThickness - 3} ${leftGripY + 14}`,
+                                `M ${leftGripX + 3} ${leftGripY + 19} L ${leftGripX + edgeThickness - 3} ${leftGripY + 19}`,
+                              ].join(" ")}
+                              className="frame-resize-grip-line"
+                            />
+                          </g>
+                          <g
+                            className="frame-resize-handle node-resize-handle"
+                            data-edge="right"
+                            onPointerDown={(event) => startFrameResize(event, {
+                              kind: "node",
+                              id: node.id,
+                              x: node.x,
+                              y: node.y,
+                              width: node.width,
+                              height: node.height,
+                              minWidth: node.minWidth,
+                              minHeight: node.minHeight,
+                              handle: "right",
+                            })}
+                          >
+                            <rect
+                              x={rightGripX}
+                              y={rightGripY}
+                              width={edgeThickness}
+                              height={edgeLength}
+                              rx={edgeRadius}
+                              className="frame-resize-hit frame-resize-edge-hit"
+                            />
+                            <path
+                              d={[
+                                `M ${rightGripX + 3} ${rightGripY + 9} L ${rightGripX + edgeThickness - 3} ${rightGripY + 9}`,
+                                `M ${rightGripX + 3} ${rightGripY + 14} L ${rightGripX + edgeThickness - 3} ${rightGripY + 14}`,
+                                `M ${rightGripX + 3} ${rightGripY + 19} L ${rightGripX + edgeThickness - 3} ${rightGripY + 19}`,
+                              ].join(" ")}
+                              className="frame-resize-grip-line"
+                            />
+                          </g>
+                          <g
+                            className="frame-resize-handle node-resize-handle"
+                            data-edge="top"
+                            onPointerDown={(event) => startFrameResize(event, {
+                              kind: "node",
+                              id: node.id,
+                              x: node.x,
+                              y: node.y,
+                              width: node.width,
+                              height: node.height,
+                              minWidth: node.minWidth,
+                              minHeight: node.minHeight,
+                              handle: "top",
+                            })}
+                          >
+                            <rect
+                              x={topGripX}
+                              y={topGripY}
+                              width={edgeLength}
+                              height={edgeThickness}
+                              rx={edgeRadius}
+                              className="frame-resize-hit frame-resize-edge-hit"
+                            />
+                            <path
+                              d={[
+                                `M ${topGripX + 9} ${topGripY + 3} L ${topGripX + 9} ${topGripY + edgeThickness - 3}`,
+                                `M ${topGripX + 14} ${topGripY + 3} L ${topGripX + 14} ${topGripY + edgeThickness - 3}`,
+                                `M ${topGripX + 19} ${topGripY + 3} L ${topGripX + 19} ${topGripY + edgeThickness - 3}`,
+                              ].join(" ")}
+                              className="frame-resize-grip-line"
+                            />
+                          </g>
+                          <g
+                            className="frame-resize-handle node-resize-handle"
+                            data-edge="bottom"
+                            onPointerDown={(event) => startFrameResize(event, {
+                              kind: "node",
+                              id: node.id,
+                              x: node.x,
+                              y: node.y,
+                              width: node.width,
+                              height: node.height,
+                              minWidth: node.minWidth,
+                              minHeight: node.minHeight,
+                              handle: "bottom",
+                            })}
+                          >
+                            <rect
+                              x={bottomGripX}
+                              y={bottomGripY}
+                              width={edgeLength}
+                              height={edgeThickness}
+                              rx={edgeRadius}
+                              className="frame-resize-hit frame-resize-edge-hit"
+                            />
+                            <path
+                              d={[
+                                `M ${bottomGripX + 9} ${bottomGripY + 3} L ${bottomGripX + 9} ${bottomGripY + edgeThickness - 3}`,
+                                `M ${bottomGripX + 14} ${bottomGripY + 3} L ${bottomGripX + 14} ${bottomGripY + edgeThickness - 3}`,
+                                `M ${bottomGripX + 19} ${bottomGripY + 3} L ${bottomGripX + 19} ${bottomGripY + edgeThickness - 3}`,
+                              ].join(" ")}
+                              className="frame-resize-grip-line"
+                            />
+                          </g>
+                          <g
+                            className="frame-resize-handle node-resize-handle"
+                            data-edge="br"
+                            onPointerDown={(event) => startFrameResize(event, {
+                              kind: "node",
+                              id: node.id,
+                              x: node.x,
+                              y: node.y,
+                              width: node.width,
+                              height: node.height,
+                              minWidth: node.minWidth,
+                              minHeight: node.minHeight,
+                              handle: "br",
+                            })}
+                          >
+                            <rect
+                              x={handleX}
+                              y={handleY}
+                              width={handleSize}
+                              height={handleSize}
+                              rx="4"
+                              className="frame-resize-hit"
+                            />
+                            <path
+                              d={[
+                                `M ${handleX + 5} ${handleY + handleSize - 4} L ${handleX + handleSize - 4} ${handleY + 5}`,
+                                `M ${handleX + 9} ${handleY + handleSize - 4} L ${handleX + handleSize - 4} ${handleY + 9}`,
+                              ].join(" ")}
+                              className="frame-resize-grip"
+                            />
+                          </g>
+                        </>
+                      )}
+                      </g>
+                    );
+                  })}
+                  {(renderLayout.moduleContainers || []).map((container) => {
+                    if (String(container.id || "").startsWith("layer:")) {
+                      return null;
+                    }
+                    const focused = container.id === activeContainerId;
+                    const inChain = activeContainerIdSet.has(container.id);
+                    const handleSize = 16;
+                    const handleX = container.x + container.width - handleSize - 6;
+                    const handleY = container.y + container.height - handleSize - 6;
+                    const edgeThickness = 10;
+                    const edgeLength = 28;
+                    const edgeRadius = 5;
+                    const midX = container.x + container.width / 2;
+                    const midY = container.y + container.height / 2;
+                    const leftGripX = container.x - 22;
+                    const leftGripY = midY - edgeLength / 2;
+                    const rightGripX = container.x + container.width + 12;
+                    const rightGripY = midY - edgeLength / 2;
+                    const topGripX = midX - edgeLength / 2;
+                    const topGripY = container.y - 22;
+                    const bottomGripX = midX - edgeLength / 2;
+                    const bottomGripY = container.y + container.height + 12;
+                    return (
+                      <g key={`container-resize-${container.id}`}>
                         <g
-                          className="frame-resize-handle node-resize-handle"
+                          data-id={container.id}
+                          className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
+                          data-edge="left"
                           onPointerDown={(event) => startFrameResize(event, {
-                            kind: "node",
-                            id: node.id,
-                            width: node.width,
-                            height: node.height,
-                            minWidth: node.minWidth,
-                            minHeight: node.minHeight,
+                            kind: "container",
+                            id: container.id,
+                            x: container.x,
+                            y: container.y,
+                            width: container.width,
+                            height: container.height,
+                            minWidth: container.minWidth,
+                            minHeight: container.minHeight,
+                            handle: "left",
+                          })}
+                        >
+                          <rect
+                            x={leftGripX}
+                            y={leftGripY}
+                            width={edgeThickness}
+                            height={edgeLength}
+                            rx={edgeRadius}
+                            className="frame-resize-hit frame-resize-edge-hit"
+                          />
+                          <path
+                            d={[
+                              `M ${leftGripX + 3} ${leftGripY + 9} L ${leftGripX + edgeThickness - 3} ${leftGripY + 9}`,
+                              `M ${leftGripX + 3} ${leftGripY + 14} L ${leftGripX + edgeThickness - 3} ${leftGripY + 14}`,
+                              `M ${leftGripX + 3} ${leftGripY + 19} L ${leftGripX + edgeThickness - 3} ${leftGripY + 19}`,
+                            ].join(" ")}
+                            className="frame-resize-grip-line"
+                          />
+                        </g>
+                        <g
+                          data-id={container.id}
+                          className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
+                          data-edge="right"
+                          onPointerDown={(event) => startFrameResize(event, {
+                            kind: "container",
+                            id: container.id,
+                            x: container.x,
+                            y: container.y,
+                            width: container.width,
+                            height: container.height,
+                            minWidth: container.minWidth,
+                            minHeight: container.minHeight,
+                            handle: "right",
+                          })}
+                        >
+                          <rect
+                            x={rightGripX}
+                            y={rightGripY}
+                            width={edgeThickness}
+                            height={edgeLength}
+                            rx={edgeRadius}
+                            className="frame-resize-hit frame-resize-edge-hit"
+                          />
+                          <path
+                            d={[
+                              `M ${rightGripX + 3} ${rightGripY + 9} L ${rightGripX + edgeThickness - 3} ${rightGripY + 9}`,
+                              `M ${rightGripX + 3} ${rightGripY + 14} L ${rightGripX + edgeThickness - 3} ${rightGripY + 14}`,
+                              `M ${rightGripX + 3} ${rightGripY + 19} L ${rightGripX + edgeThickness - 3} ${rightGripY + 19}`,
+                            ].join(" ")}
+                            className="frame-resize-grip-line"
+                          />
+                        </g>
+                        <g
+                          data-id={container.id}
+                          className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
+                          data-edge="top"
+                          onPointerDown={(event) => startFrameResize(event, {
+                            kind: "container",
+                            id: container.id,
+                            x: container.x,
+                            y: container.y,
+                            width: container.width,
+                            height: container.height,
+                            minWidth: container.minWidth,
+                            minHeight: container.minHeight,
+                            handle: "top",
+                          })}
+                        >
+                          <rect
+                            x={topGripX}
+                            y={topGripY}
+                            width={edgeLength}
+                            height={edgeThickness}
+                            rx={edgeRadius}
+                            className="frame-resize-hit frame-resize-edge-hit"
+                          />
+                          <path
+                            d={[
+                              `M ${topGripX + 9} ${topGripY + 3} L ${topGripX + 9} ${topGripY + edgeThickness - 3}`,
+                              `M ${topGripX + 14} ${topGripY + 3} L ${topGripX + 14} ${topGripY + edgeThickness - 3}`,
+                              `M ${topGripX + 19} ${topGripY + 3} L ${topGripX + 19} ${topGripY + edgeThickness - 3}`,
+                            ].join(" ")}
+                            className="frame-resize-grip-line"
+                          />
+                        </g>
+                        <g
+                          data-id={container.id}
+                          className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
+                          data-edge="bottom"
+                          onPointerDown={(event) => startFrameResize(event, {
+                            kind: "container",
+                            id: container.id,
+                            x: container.x,
+                            y: container.y,
+                            width: container.width,
+                            height: container.height,
+                            minWidth: container.minWidth,
+                            minHeight: container.minHeight,
+                            handle: "bottom",
+                          })}
+                        >
+                          <rect
+                            x={bottomGripX}
+                            y={bottomGripY}
+                            width={edgeLength}
+                            height={edgeThickness}
+                            rx={edgeRadius}
+                            className="frame-resize-hit frame-resize-edge-hit"
+                          />
+                          <path
+                            d={[
+                              `M ${bottomGripX + 9} ${bottomGripY + 3} L ${bottomGripX + 9} ${bottomGripY + edgeThickness - 3}`,
+                              `M ${bottomGripX + 14} ${bottomGripY + 3} L ${bottomGripX + 14} ${bottomGripY + edgeThickness - 3}`,
+                              `M ${bottomGripX + 19} ${bottomGripY + 3} L ${bottomGripX + 19} ${bottomGripY + edgeThickness - 3}`,
+                            ].join(" ")}
+                            className="frame-resize-grip-line"
+                          />
+                        </g>
+                        <g
+                          data-id={container.id}
+                          className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
+                          data-edge="br"
+                          onPointerDown={(event) => startFrameResize(event, {
+                            kind: "container",
+                            id: container.id,
+                            x: container.x,
+                            y: container.y,
+                            width: container.width,
+                            height: container.height,
+                            minWidth: container.minWidth,
+                            minHeight: container.minHeight,
+                            handle: "br",
                           })}
                         >
                           <rect
@@ -2615,48 +3025,6 @@ function App() {
                             className="frame-resize-grip"
                           />
                         </g>
-                      )}
-                      </g>
-                    );
-                  })}
-                  {(renderLayout.moduleContainers || []).map((container) => {
-                    if (String(container.id || "").startsWith("layer:")) {
-                      return null;
-                    }
-                    const focused = container.id === activeContainerId;
-                    const inChain = activeContainerIdSet.has(container.id);
-                    const handleSize = 16;
-                    const handleX = container.x + container.width - handleSize - 6;
-                    const handleY = container.y + container.height - handleSize - 6;
-                    return (
-                      <g
-                        key={`container-resize-${container.id}`}
-                        data-id={container.id}
-                        className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
-                        onPointerDown={(event) => startFrameResize(event, {
-                          kind: "container",
-                          id: container.id,
-                          width: container.width,
-                          height: container.height,
-                          minWidth: container.minWidth,
-                          minHeight: container.minHeight,
-                        })}
-                      >
-                        <rect
-                          x={handleX}
-                          y={handleY}
-                          width={handleSize}
-                          height={handleSize}
-                          rx="4"
-                          className="frame-resize-hit"
-                        />
-                        <path
-                          d={[
-                            `M ${handleX + 5} ${handleY + handleSize - 4} L ${handleX + handleSize - 4} ${handleY + 5}`,
-                            `M ${handleX + 9} ${handleY + handleSize - 4} L ${handleX + handleSize - 4} ${handleY + 9}`,
-                          ].join(" ")}
-                          className="frame-resize-grip"
-                        />
                       </g>
                     );
                   })}

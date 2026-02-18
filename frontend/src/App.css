@@ -1332,6 +1332,16 @@ button.active-focus-toggle {
   cursor: nwse-resize;
 }
 
+.frame-resize-handle[data-edge="left"],
+.frame-resize-handle[data-edge="right"] {
+  cursor: ew-resize;
+}
+
+.frame-resize-handle[data-edge="top"],
+.frame-resize-handle[data-edge="bottom"] {
+  cursor: ns-resize;
+}
+
 .frame-resize-hit {
   fill: rgba(245, 250, 255, 0.75);
   stroke: rgba(86, 120, 154, 0.9);
@@ -1342,6 +1352,14 @@ button.active-focus-toggle {
   fill: none;
   stroke: rgba(42, 86, 122, 0.95);
   stroke-width: 1.6;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.frame-resize-grip-line {
+  fill: none;
+  stroke: rgba(42, 86, 122, 0.95);
+  stroke-width: 1.4;
   stroke-linecap: round;
   pointer-events: none;
 }
