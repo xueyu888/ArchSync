@@ -101,6 +101,50 @@ async function main() {
           if (x1 <= x0 || y1 <= y0) return 0;
           return (x1 - x0) * (y1 - y0);
         }
+        function parsePathPoints(d) {
+          const nums = String(d || "").match(/-?\\d+(?:\\.\\d+)?/g);
+          if (!nums || nums.length < 4) return [];
+          const out = [];
+          for (let i = 0; i + 1 < nums.length; i += 2) {
+            out.push({ x: Number(nums[i]), y: Number(nums[i + 1]) });
+          }
+          return out;
+        }
+        function pointInRect(point, rect, pad = 0.6) {
+          if (!point || !rect) return false;
+          return (
+            point.x >= rect.x - pad
+            && point.x <= rect.x + rect.width + pad
+            && point.y >= rect.y - pad
+            && point.y <= rect.y + rect.height + pad
+          );
+        }
+        function segmentHitsRect(a, b, rect, pad = 1.6) {
+          const r = {
+            x: rect.x - pad,
+            y: rect.y - pad,
+            width: rect.width + pad * 2,
+            height: rect.height + pad * 2,
+          };
+          const dx = Math.abs(a.x - b.x);
+          const dy = Math.abs(a.y - b.y);
+          if (dx < 0.2 && dy < 0.2) return false;
+          if (dy < 0.2) {
+            const y = a.y;
+            const minX = Math.min(a.x, b.x);
+            const maxX = Math.max(a.x, b.x);
+            if (!(y > r.y && y < r.y + r.height)) return false;
+            return maxX > r.x && minX < r.x + r.width;
+          }
+          if (dx < 0.2) {
+            const x = a.x;
+            const minY = Math.min(a.y, b.y);
+            const maxY = Math.max(a.y, b.y);
+            if (!(x > r.x && x < r.x + r.width)) return false;
+            return maxY > r.y && minY < r.y + r.height;
+          }
+          return false;
+        }
 
         const bodies = Array.from(document.querySelectorAll("g.module-container-body-layer"));
         const headerRects = Array.from(document.querySelectorAll("g.hierarchy-chip rect.hierarchy-chip-bg"));
@@ -166,6 +210,7 @@ async function main() {
           const bb = bboxOf(rect);
           if (id && bb) nodes.push({ id, bb });
         }
+        const nodeBBById = new Map(nodes.map((item) => [item.id, item.bb]));
         const nodeBoxes = nodes.map((item) => item.bb);
         const headerNodeOverlapPairs = [];
         for (let i = 0; i < headerBoxes.length; i += 1) {
@@ -188,6 +233,39 @@ async function main() {
 
         const nonLayerContainerIds = Array.from(bodyById.keys()).filter((id) => !id.startsWith("layer:") && !id.startsWith("system:"));
 
+        // Edge visibility invariant: edges should not run under node bodies.
+        const edgePaths = Array.from(document.querySelectorAll("g.edge-group path.edge:not(.edge-interface-shell)"));
+        let edgeNodeIntersectionCount = 0;
+        const edgeNodeIntersections = [];
+        for (const path of edgePaths) {
+          const d = path.getAttribute("d") || "";
+          const points = parsePathPoints(d);
+          if (points.length < 2) continue;
+          const start = points[0];
+          const end = points[points.length - 1];
+          let srcId = "";
+          let dstId = "";
+          for (const node of nodes) {
+            if (!srcId && pointInRect(start, node.bb, 1.2)) srcId = node.id;
+            if (!dstId && pointInRect(end, node.bb, 1.2)) dstId = node.id;
+            if (srcId && dstId) break;
+          }
+          for (let i = 0; i < points.length - 1; i += 1) {
+            const a = points[i];
+            const b = points[i + 1];
+            for (const node of nodes) {
+              if (!node || node.id === srcId || node.id === dstId) continue;
+              if (segmentHitsRect(a, b, node.bb, 1.8)) {
+                edgeNodeIntersectionCount += 1;
+                if (edgeNodeIntersections.length < 30) {
+                  edgeNodeIntersections.push({ nodeId: node.id, a, b });
+                }
+                break;
+              }
+            }
+          }
+        }
+
         return {
           containerCount: bodyById.size,
           containmentViolations,
@@ -200,6 +278,8 @@ async function main() {
           nonLayerContainerCount: nonLayerContainerIds.length,
           dimmedNodes,
           dimmedEdges,
+          edgeNodeIntersectionCount,
+          edgeNodeIntersections,
         };
       });
     }
@@ -212,6 +292,97 @@ async function main() {
     // Root overview: multiple lanes + hierarchy frames.
     await page.locator("svg.diagram g.node").first().waitFor({ timeout: 60_000 });
     await page.screenshot({ path: overviewPng, fullPage: true });
+
+    // Resize smoke test: node frames should be resizable (all-is-frames) without reintroducing
+    // edge-under-node regressions.
+    const resizeTargetId = await page.evaluate(() => {
+      const node = document.querySelector("svg.diagram g.node");
+      return node?.getAttribute("data-id") || "";
+    });
+    if (resizeTargetId) {
+      await page.locator(`svg.diagram g.node[data-id="${resizeTargetId}"]`).first().click({ timeout: 10_000 });
+      await page.waitForTimeout(150);
+      const before = await page.evaluate((id) => {
+        const rect = document.querySelector(`svg.diagram g.node[data-id="${id}"] rect.node-body`);
+        if (!rect || typeof rect.getBBox !== "function") return null;
+        const bb = rect.getBBox();
+        return { width: bb.width, height: bb.height };
+      }, resizeTargetId);
+
+      const handle = page.locator(`svg.diagram g.node[data-id="${resizeTargetId}"] g.node-resize-handle rect.frame-resize-hit`).first();
+      if (await handle.count()) {
+        await handle.scrollIntoViewIfNeeded();
+        const bb = await handle.boundingBox();
+        if (bb) {
+          await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(bb.x + bb.width / 2 + 120, bb.y + bb.height / 2 + 84, { steps: 10 });
+          await page.mouse.up();
+          await page.waitForTimeout(220);
+        }
+      } else {
+        report.failures.push(`missing resize handle for node: ${resizeTargetId}`);
+      }
+
+      const after = await page.evaluate((id) => {
+        const rect = document.querySelector(`svg.diagram g.node[data-id="${id}"] rect.node-body`);
+        if (!rect || typeof rect.getBBox !== "function") return null;
+        const bb = rect.getBBox();
+        return { width: bb.width, height: bb.height };
+      }, resizeTargetId);
+      report.resize_smoke = { id: resizeTargetId, before, after };
+      report.resize_smoke_metrics = await evaluateMetrics();
+
+      const resizeContainerId = await page.evaluate(() => {
+        const bodies = Array.from(document.querySelectorAll("svg.diagram g.module-container-body-layer"));
+        for (const g of bodies) {
+          const id = g.getAttribute("data-id") || "";
+          if (!id || id.startsWith("layer:")) continue;
+          return id;
+        }
+        return "";
+      });
+      if (resizeContainerId) {
+        const cBefore = await page.evaluate((id) => {
+          const rect = document.querySelector(`svg.diagram g.module-container-body-layer[data-id="${id}"] rect.module-container-body`);
+          if (!rect || typeof rect.getBBox !== "function") return null;
+          const bb = rect.getBBox();
+          return { width: bb.width, height: bb.height };
+        }, resizeContainerId);
+
+        const cHandle = page.locator(`svg.diagram g.container-resize-handle[data-id="${resizeContainerId}"] rect.frame-resize-hit`).first();
+        if (await cHandle.count()) {
+          await cHandle.scrollIntoViewIfNeeded();
+          const bb = await cHandle.boundingBox();
+          if (bb) {
+            await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+            await page.mouse.down();
+            await page.mouse.move(bb.x + bb.width / 2 + 140, bb.y + bb.height / 2 + 100, { steps: 10 });
+            await page.mouse.up();
+            await page.waitForTimeout(220);
+          }
+        } else {
+          report.failures.push(`missing resize handle for container: ${resizeContainerId}`);
+        }
+
+        const cAfter = await page.evaluate((id) => {
+          const rect = document.querySelector(`svg.diagram g.module-container-body-layer[data-id="${id}"] rect.module-container-body`);
+          if (!rect || typeof rect.getBBox !== "function") return null;
+          const bb = rect.getBBox();
+          return { width: bb.width, height: bb.height };
+        }, resizeContainerId);
+
+        report.container_resize_smoke = { id: resizeContainerId, before: cBefore, after: cAfter };
+        report.container_resize_smoke_metrics = await evaluateMetrics();
+      }
+
+      // Reset manual overrides so later screenshots remain comparable.
+      const autoLayoutBtn = page.getByRole("button", { name: "Auto Layout" });
+      if (await autoLayoutBtn.count()) {
+        await autoLayoutBtn.click({ timeout: 10_000 });
+        await page.waitForTimeout(200);
+      }
+    }
 
     // Deep hierarchy: double-click the deepest module in the sidebar list to select it,
     // then expand one visible node and verify container header toggles collapse it.

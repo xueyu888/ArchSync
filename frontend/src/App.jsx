@@ -12,6 +12,7 @@ function App() {
   const [currentParentId, setCurrentParentId] = useState("");
   const [expandedModuleIds, setExpandedModuleIds] = useState(() => new Set());
   const [selectedModuleId, setSelectedModuleId] = useState("");
+  const [focusedModuleId, setFocusedModuleId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [levelFilter, setLevelFilter] = useState("all");
   const [zoom, setZoom] = useState(1);
@@ -51,6 +52,7 @@ function App() {
   const canvasWrapRef = useRef(null);
   const dragRef = useRef(null);
   const groupDragRef = useRef(null);
+  const resizeRef = useRef(null);
   const panRef = useRef(null);
   const suppressClickRef = useRef(false);
   const effectiveModules = useMemo(() => {
@@ -404,10 +406,6 @@ function App() {
     () => Object.fromEntries(renderLayout.nodes.map((item) => [item.id, item])),
     [renderLayout.nodes],
   );
-  const edgeGeometryById = useMemo(
-    () => studio.buildEdgeGeometries(visibleEdges, drawNodeById),
-    [visibleEdges, drawNodeById],
-  );
   const containerById = useMemo(
     () => Object.fromEntries((renderLayout.moduleContainers || []).map((container) => [container.id, container])),
     [renderLayout.moduleContainers],
@@ -416,18 +414,234 @@ function App() {
     () => Object.fromEntries((renderLayout.containerDefs || []).map((def) => [def.id, def.memberIds || []])),
     [renderLayout.containerDefs],
   );
+  const ownerContainerByNodeId = useMemo(() => {
+    const containers = renderLayout.moduleContainers || [];
+    const containerIdSet = new Set(containers.map((item) => item.id));
+    const output = {};
+    for (const node of renderLayout.nodes || []) {
+      const module = moduleById[node.id] || node;
+      let parentId = module?.parent_id || "";
+      while (parentId) {
+        if (containerIdSet.has(parentId)) {
+          const containerId = String(parentId || "");
+          if (containerId && !containerId.startsWith("layer:") && !containerId.startsWith("system:")) {
+            output[node.id] = containerId;
+            break;
+          }
+        }
+        parentId = moduleById[parentId]?.parent_id || "";
+      }
+    }
+    return output;
+  }, [renderLayout.nodes, renderLayout.moduleContainers, moduleById]);
+  const edgeGeometryById = useMemo(
+    () => studio.buildEdgeGeometries(visibleEdges, drawNodeById, { ownerContainerByNodeId, containerById, descendantsByModule }),
+    [visibleEdges, drawNodeById, ownerContainerByNodeId, containerById, descendantsByModule],
+  );
   const activeContainerChain = useMemo(() => {
-    const anchor = selectedModuleId && moduleById[selectedModuleId]
-      ? selectedModuleId
-      : systemModule?.id || "";
+    const anchor = focusedModuleId && moduleById[focusedModuleId]
+      ? focusedModuleId
+      : "";
     if (!anchor) {
       return [];
     }
     const path = studio.lineage(anchor, moduleById).map((item) => item.id);
     return path.filter((moduleId) => !!containerById[moduleId]);
-  }, [selectedModuleId, systemModule, moduleById, containerById]);
+  }, [focusedModuleId, moduleById, containerById]);
   const activeContainerId = activeContainerChain.length ? activeContainerChain[activeContainerChain.length - 1] : "";
   const activeContainerIdSet = useMemo(() => new Set(activeContainerChain), [activeContainerChain]);
+  const containerBoundaryPortsById = useMemo(() => {
+    const containers = renderLayout.moduleContainers || [];
+    if (!containers.length) {
+      return {};
+    }
+    const containerByIdLocal = Object.fromEntries(containers.map((item) => [item.id, item]));
+    const samplesByKey = {};
+    const add = (containerId, side, y, weight) => {
+      if (!containerId || !side || !Number.isFinite(y) || !Number.isFinite(weight) || weight <= 0) {
+        return;
+      }
+      const key = `${containerId}|${side}`;
+      if (!samplesByKey[key]) {
+        samplesByKey[key] = [];
+      }
+      samplesByKey[key].push({ y, weight });
+    };
+    const crosses = (containerId, otherNodeId) => {
+      if (!containerId) return false;
+      const descendants = descendantsByModule?.[containerId];
+      if (!descendants || typeof descendants.has !== "function") return true;
+      return !descendants.has(otherNodeId);
+    };
+
+    for (const edge of visibleEdges || []) {
+      const geometry = edgeGeometryById[edge.id];
+      if (!geometry) {
+        continue;
+      }
+      const weight = Math.max(1, Number(edge.count) || 1);
+      const srcOwner = ownerContainerByNodeId[edge.src_id] || "";
+      const dstOwner = ownerContainerByNodeId[edge.dst_id] || "";
+      if (srcOwner && crosses(srcOwner, edge.dst_id)) {
+        const container = containerByIdLocal[srcOwner];
+        const srcNode = drawNodeById[edge.src_id];
+        const dstNode = drawNodeById[edge.dst_id];
+        if (container && srcNode && dstNode) {
+          const containerCenterX = container.x + container.width / 2;
+          const otherCenterX = dstNode.x + dstNode.width / 2;
+          const side = otherCenterX >= containerCenterX ? "right" : "left";
+          add(srcOwner, side, geometry.startY, weight);
+        }
+      }
+      if (dstOwner && crosses(dstOwner, edge.src_id)) {
+        const container = containerByIdLocal[dstOwner];
+        const srcNode = drawNodeById[edge.src_id];
+        const dstNode = drawNodeById[edge.dst_id];
+        if (container && srcNode && dstNode) {
+          const containerCenterX = container.x + container.width / 2;
+          const otherCenterX = srcNode.x + srcNode.width / 2;
+          const side = otherCenterX >= containerCenterX ? "right" : "left";
+          add(dstOwner, side, geometry.endY, weight);
+        }
+      }
+    }
+
+    const output = {};
+    const CLUSTER_GAP = 26;
+    const MIN_PORT_GAP = 16;
+    const MAX_PORTS_PER_SIDE = 6;
+    const finalizePorts = (container, ports) => {
+      if (!ports.length) return [];
+      const minY = container.y + 18;
+      const maxY = container.y + container.height - 18;
+      const clamped = ports
+        .map((item) => ({
+          ...item,
+          y: Math.min(maxY, Math.max(minY, item.y)),
+        }))
+        .sort((a, b) => a.y - b.y);
+      // Enforce readable spacing while keeping ports near their source.
+      for (let i = 1; i < clamped.length; i += 1) {
+        if (clamped[i].y - clamped[i - 1].y < MIN_PORT_GAP) {
+          clamped[i].y = clamped[i - 1].y + MIN_PORT_GAP;
+        }
+      }
+      const overflow = clamped[clamped.length - 1].y - maxY;
+      if (overflow > 0) {
+        for (const port of clamped) port.y -= overflow;
+      }
+      const underflow = minY - clamped[0].y;
+      if (underflow > 0) {
+        for (const port of clamped) port.y += underflow;
+      }
+      return clamped;
+    };
+
+    for (const [key, samples] of Object.entries(samplesByKey)) {
+      const [containerId, side] = String(key).split("|");
+      const container = containerByIdLocal[containerId];
+      if (!container || !samples?.length) {
+        continue;
+      }
+
+      const sorted = [...samples].sort((a, b) => a.y - b.y);
+      const clusters = [];
+      let current = null;
+      const flush = () => {
+        if (!current || !current.count) return;
+        clusters.push({
+          count: current.count,
+          y: current.weightedY / current.count,
+        });
+      };
+      for (const sample of sorted) {
+        if (!current) {
+          current = { count: sample.weight, weightedY: sample.y * sample.weight };
+          continue;
+        }
+        const mean = current.weightedY / Math.max(1e-6, current.count);
+        if (Math.abs(sample.y - mean) <= CLUSTER_GAP) {
+          current.count += sample.weight;
+          current.weightedY += sample.y * sample.weight;
+        } else {
+          flush();
+          current = { count: sample.weight, weightedY: sample.y * sample.weight };
+        }
+      }
+      flush();
+
+      let ports = clusters;
+      if (ports.length > MAX_PORTS_PER_SIDE) {
+        const strongest = [...ports].sort((a, b) => b.count - a.count).slice(0, MAX_PORTS_PER_SIDE);
+        ports = strongest.sort((a, b) => a.y - b.y);
+      }
+
+      const finalized = finalizePorts(container, ports);
+      if (!output[containerId]) {
+        output[containerId] = { left: [], right: [] };
+      }
+      output[containerId][side] = finalized;
+    }
+    return output;
+  }, [renderLayout.moduleContainers, visibleEdges, edgeGeometryById, ownerContainerByNodeId, drawNodeById, descendantsByModule]);
+  const containerInterfaceById = useMemo(() => {
+    const containers = renderLayout.moduleContainers || [];
+    if (!containers.length) {
+      return {};
+    }
+    const containerIdSet = new Set(containers.map((item) => item.id));
+    const summaryById = {};
+    for (const container of containers) {
+      summaryById[container.id] = {
+        inCount: 0,
+        outCount: 0,
+        inWeightedY: 0,
+        outWeightedY: 0,
+      };
+    }
+    for (const node of renderLayout.nodes || []) {
+      const inCount = Math.max(0, Number(node.outerInEdgeCount || node.outerInParentCount || 0));
+      const outCount = Math.max(0, Number(node.outerOutEdgeCount || node.outerOutParentCount || 0));
+      if (!inCount && !outCount) {
+        continue;
+      }
+      const nodeCenterY = node.y + node.height / 2;
+      for (const ancestor of studio.lineage(node.id, moduleById)) {
+        if (!containerIdSet.has(ancestor.id)) {
+          continue;
+        }
+        const summary = summaryById[ancestor.id];
+        if (!summary) {
+          continue;
+        }
+        if (inCount) {
+          summary.inCount += inCount;
+          summary.inWeightedY += nodeCenterY * inCount;
+        }
+        if (outCount) {
+          summary.outCount += outCount;
+          summary.outWeightedY += nodeCenterY * outCount;
+        }
+      }
+    }
+    const output = {};
+    for (const container of containers) {
+      const summary = summaryById[container.id];
+      if (!summary || (!summary.inCount && !summary.outCount)) {
+        continue;
+      }
+      const minY = container.y + 18;
+      const maxY = container.y + container.height - 18;
+      const clampY = (value) => Math.min(maxY, Math.max(minY, value));
+      output[container.id] = {
+        inCount: summary.inCount,
+        outCount: summary.outCount,
+        inY: summary.inCount ? clampY(summary.inWeightedY / summary.inCount) : null,
+        outY: summary.outCount ? clampY(summary.outWeightedY / summary.outCount) : null,
+      };
+    }
+    return output;
+  }, [renderLayout.moduleContainers, renderLayout.nodes, moduleById]);
   const availableLevels = useMemo(() => {
     return Array.from(
       new Set((effectiveModules || []).filter((item) => item.level > 0).map((item) => item.level)),
@@ -719,7 +933,27 @@ function App() {
       ...old,
       [currentParentId]: {
         ...(old[currentParentId] || {}),
-        [nodeId]: { x, y },
+        [nodeId]: {
+          ...(old[currentParentId]?.[nodeId] || {}),
+          x,
+          y,
+        },
+      },
+    }));
+  }
+  function setModuleManualSize(moduleId, width, height) {
+    if (!currentParentId) {
+      return;
+    }
+    setManualLayouts((old) => ({
+      ...old,
+      [currentParentId]: {
+        ...(old[currentParentId] || {}),
+        [moduleId]: {
+          ...(old[currentParentId]?.[moduleId] || {}),
+          width,
+          height,
+        },
       },
     }));
   }
@@ -744,6 +978,7 @@ function App() {
   function collapseAllExpanded() {
     setSelectedEdgeId("");
     setActivePortFocus(null);
+    setFocusedModuleId("");
     setExpandedModuleIds(new Set());
   }
   function showNodeHover(event, nodeId) {
@@ -805,6 +1040,7 @@ function App() {
         target.closest("g.node-expand-toggle")
         || target.closest("g.node-agg-badge")
         || target.closest("g.node-port-group")
+        || target.closest("g.frame-resize-handle")
       ) {
         return;
       }
@@ -889,6 +1125,9 @@ function App() {
     if (target.closest("g.module-container-toggle")) {
       return;
     }
+    if (target.closest("g.frame-resize-handle")) {
+      return;
+    }
     const memberIds = containerMembersById[containerId] || [];
     if (!memberIds.length) {
       return;
@@ -958,15 +1197,103 @@ function App() {
       return;
     }
     if (drag.moved && drag.parentId === currentParentId) {
-      setManualLayouts((old) => ({
-        ...old,
-        [currentParentId]: {
-          ...(old[currentParentId] || {}),
-          ...drag.lastPositions,
-        },
-      }));
+      setManualLayouts((old) => {
+        const current = old[currentParentId] || {};
+        const nextForParent = { ...current };
+        for (const [nodeId, pos] of Object.entries(drag.lastPositions || {})) {
+          nextForParent[nodeId] = {
+            ...(current[nodeId] || {}),
+            ...pos,
+          };
+        }
+        return {
+          ...old,
+          [currentParentId]: nextForParent,
+        };
+      });
     }
     groupDragRef.current = null;
+    setDragPreview(null);
+  }
+  function startFrameResize(event, frame) {
+    if (!currentParentId || event.button !== 0 || !frame?.id) {
+      return;
+    }
+    if (dragRef.current || groupDragRef.current || panRef.current || resizeRef.current) {
+      return;
+    }
+    const point = toSvgPoint(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+    const startWidth = Math.max(1, Number(frame.width) || 1);
+    const startHeight = Math.max(1, Number(frame.height) || 1);
+    const minWidth = Math.max(1, Number(frame.minWidth) || startWidth);
+    const minHeight = Math.max(1, Number(frame.minHeight) || startHeight);
+    resizeRef.current = {
+      pointerId: event.pointerId,
+      parentId: currentParentId,
+      id: frame.id,
+      kind: frame.kind || "node",
+      startPoint: point,
+      startWidth,
+      startHeight,
+      minWidth,
+      minHeight,
+      lastWidth: startWidth,
+      lastHeight: startHeight,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setSelectedEdgeId("");
+    setActivePortFocus(null);
+    setSelectedModuleId(frame.id);
+    setFocusedModuleId(frame.id);
+    setDragPreview({
+      parentId: currentParentId,
+      positions: {
+        [frame.id]: { width: startWidth, height: startHeight },
+      },
+    });
+    setHoverCard(null);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  function moveFrameResize(event) {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId || resize.parentId !== currentParentId) {
+      return;
+    }
+    const point = toSvgPoint(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+    const dx = point.x - resize.startPoint.x;
+    const dy = point.y - resize.startPoint.y;
+    const nextWidth = Math.max(resize.minWidth, studio.snapToGrid(resize.startWidth + dx));
+    const nextHeight = Math.max(resize.minHeight, studio.snapToGrid(resize.startHeight + dy));
+    if (Math.abs(nextWidth - resize.lastWidth) > 1 || Math.abs(nextHeight - resize.lastHeight) > 1) {
+      resize.moved = true;
+      suppressClickRef.current = true;
+      resize.lastWidth = nextWidth;
+      resize.lastHeight = nextHeight;
+      setDragPreview({
+        parentId: resize.parentId,
+        positions: {
+          [resize.id]: { width: nextWidth, height: nextHeight },
+        },
+      });
+    }
+  }
+  function finishFrameResize(event) {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) {
+      return;
+    }
+    if (resize.moved && resize.parentId === currentParentId) {
+      setModuleManualSize(resize.id, resize.lastWidth, resize.lastHeight);
+    }
+    resizeRef.current = null;
     setDragPreview(null);
   }
   function startCanvasPan(event) {
@@ -1049,6 +1376,7 @@ function App() {
     setSelectedEdgeId("");
     setActivePortFocus(null);
     setSelectedModuleId(moduleId);
+    setFocusedModuleId(moduleId);
     setSelectedAroundHops(-1);
     if (options.scroll) {
       setPendingScrollId(moduleId);
@@ -1061,6 +1389,7 @@ function App() {
     setSelectedEdgeId("");
     setActivePortFocus(null);
     setSelectedModuleId(moduleId);
+    setFocusedModuleId(moduleId);
     if (!hasChildren(moduleId)) return;
     setExpandedModuleIds((old) => {
       const next = old.has(moduleId)
@@ -1077,6 +1406,7 @@ function App() {
     setSelectedEdgeId("");
     setActivePortFocus(null);
     setSelectedModuleId(containerId);
+    setFocusedModuleId(containerId);
     setExpandedModuleIds((old) => {
       const next = studio.collapseExpandedSubtree(old, containerId, childrenByParent, "");
       return studio.setsEqual(next, old) ? old : next;
@@ -1097,6 +1427,7 @@ function App() {
     }
     setSelectedEdgeId(""); setActivePortFocus(null);
     setSelectedModuleId(moduleId);
+    setFocusedModuleId(moduleId);
     setExpandedModuleIds((old) => {
       const next = new Set(old);
       for (const targetId of targets) {
@@ -1115,6 +1446,7 @@ function App() {
     setSelectedEdgeId("");
     setActivePortFocus(null);
     setSelectedModuleId(moduleId);
+    setFocusedModuleId(moduleId);
   }
   async function refreshModel(autoBuild = true) {
     setBusy((old) => ({ ...old, refresh: true }));
@@ -1227,6 +1559,11 @@ function App() {
     });
   }, [systemModule, moduleById, childrenByParent, currentParentId, selectedModuleId, focusMode]);
   useEffect(() => {
+    if (focusedModuleId && !moduleById[focusedModuleId]) {
+      setFocusedModuleId("");
+    }
+  }, [focusedModuleId, moduleById]);
+  useEffect(() => {
     setSelectedEdgeId("");
     setActivePortFocus(null);
     setSelectedAroundHops(-1);
@@ -1239,6 +1576,7 @@ function App() {
     setPendingScrollId("");
     setPanningCanvas(false);
     setHoverCard(null);
+    setFocusedModuleId("");
   }, [currentParentId]);
   useEffect(() => {
     if (!pendingScrollId) {
@@ -1645,6 +1983,7 @@ function App() {
                     className={`link-row link-${edge.kind} ${selectedEdgeId === edge.id ? "active" : ""}`}
                     onClick={() => {
                       setSelectedModuleId(edge.src_id);
+                      setFocusedModuleId(edge.src_id);
                       setSelectedEdgeId(edge.id);
                       setActivePortFocus(null);
                     }}
@@ -1690,6 +2029,23 @@ function App() {
               onPointerMove={moveCanvasPan}
               onPointerUp={finishCanvasPan}
               onPointerCancel={finishCanvasPan}
+              onClick={(event) => {
+                const target = event.target;
+                if (!(target instanceof Element)) {
+                  return;
+                }
+                if (target.closest("g.node") || target.closest("g.edge-group")) {
+                  return;
+                }
+                // Consume synthetic clicks triggered after pans/drags.
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  return;
+                }
+                setSelectedEdgeId("");
+                setActivePortFocus(null);
+                setFocusedModuleId("");
+              }}
             >
               {!model && <p className="empty">No model loaded yet.</p>}
               {model && (
@@ -1701,24 +2057,23 @@ function App() {
                     height={Math.max(1, Math.round(renderLayout.height * zoom) + 360)}
                     viewBox={`0 0 ${renderLayout.width} ${renderLayout.height}`}
                     onPointerMove={(event) => {
+                      moveFrameResize(event);
                       moveNodeDrag(event);
                       moveGroupDrag(event);
                     }}
                     onPointerUp={(event) => {
+                      finishFrameResize(event);
                       finishNodeDrag(event);
                       finishGroupDrag(event);
                     }}
                     onPointerCancel={(event) => {
+                      finishFrameResize(event);
                       finishNodeDrag(event);
                       finishGroupDrag(event);
                     }}
                     onPointerLeave={() => {
                       setHoverNodeId("");
                       setHoverCard(null);
-                    }}
-                    onClick={() => {
-                      setSelectedEdgeId("");
-                      setActivePortFocus(null);
                     }}
                   >
                 <DiagramDefs />
@@ -1849,6 +2204,7 @@ function App() {
                           event.stopPropagation();
                           setSelectedEdgeId(edge.id);
                           setSelectedModuleId(edge.src_id);
+                          setFocusedModuleId(edge.src_id);
                           setActivePortFocus(null);
                         }}
                       >
@@ -1931,7 +2287,8 @@ function App() {
                     onDragContainer={(event, containerId) => startGroupDrag(event, containerId)}
                   />
                   {renderLayout.nodes.map((node) => {
-                  const isActive = node.id === selectedModuleId;
+                  const isFocusedNode = node.id === focusedModuleId;
+                  const isSelectedNode = node.id === selectedModuleId;
                   const canExpand = hasChildren(node.id);
                   const isExpanded = expandedModuleIds.has(node.id);
                   const isFocused = node.id === currentParentId;
@@ -1943,17 +2300,21 @@ function App() {
                   const inBadgeWidth = Math.max(58, inBadgeLabel.length * 6.1 + 14);
                   const outBadgeWidth = Math.max(62, outBadgeLabel.length * 6.1 + 14);
                   const badgeY = node.y + node.height - 23;
-                  const hintY = node.y + node.height - (outerOutCount > 0 ? 28 : 12);
+                  const hintY = node.y + node.height - 28;
                   const titleX = node.x + (canExpand ? 46 : 14);
                   const isHoveredNode = hoverNodeId === node.id;
                   const isNeighborNode = hoverContext.neighborIds.has(node.id) || selectionNeighborIds.has(node.id);
                   const dimmedByHover = false;
                   const dimmedBySelection = (!hoverNodeId && edgeScope === "selected" && selectedIsVisible && selectedModuleId && node.id !== selectedModuleId && !isNeighborNode);
-                  const showPins = !autoHidePins || isActive || isHoveredNode || isNeighborNode || (activePortFocus && activePortFocus.nodeId === node.id);
+                  const showPins = !autoHidePins || isSelectedNode || isFocusedNode || isHoveredNode || isNeighborNode || (activePortFocus && activePortFocus.nodeId === node.id);
                   const dimmed = dimmedByHover || dimmedBySelection;
+                  const showResizeHandle = isFocusedNode || isSelectedNode || isHoveredNode;
+                  const handleSize = 16;
+                  const handleX = node.x + node.width - handleSize - 6;
+                  const handleY = node.y + node.height - handleSize - 6;
                   const nodeClasses = [
                     "node",
-                    isActive ? "active" : "",
+                    isFocusedNode ? "active" : "",
                     isFocused ? "focused" : "",
                     canExpand ? "expandable" : "leaf",
                     isExpanded ? "expanded" : "collapsed",
@@ -1967,8 +2328,13 @@ function App() {
                       <g
                         key={node.id}
                         data-id={node.id}
+                        data-owner={ownerContainerByNodeId[node.id] || ""}
+                        data-parent={node.parent_id || ""}
                         className={nodeClasses}
-                        onClick={() => activateNode(node.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          activateNode(node.id);
+                        }}
                         onDoubleClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -2194,7 +2560,7 @@ function App() {
                           }}
                         >
                           <rect
-                            x={node.x + node.width - outBadgeWidth - 10}
+                            x={node.x + node.width - outBadgeWidth - 32}
                             y={badgeY}
                             width={outBadgeWidth}
                             height="15"
@@ -2202,7 +2568,7 @@ function App() {
                             className="agg-bg"
                           />
                           <text
-                            x={node.x + node.width - 10 - outBadgeWidth / 2}
+                            x={node.x + node.width - 32 - outBadgeWidth / 2}
                             y={badgeY + 11}
                             textAnchor="middle"
                             className="agg-text"
@@ -2213,7 +2579,7 @@ function App() {
                       )}
                       {canExpand && (
                         <text
-                          x={node.x + node.width - 12}
+                          x={node.x + node.width - 34}
                           y={hintY}
                           textAnchor="end"
                         className="drill-hint"
@@ -2221,6 +2587,176 @@ function App() {
                           dblclick to expand/collapse
                       </text>
                       )}
+                      {showResizeHandle && (
+                        <g
+                          className="frame-resize-handle node-resize-handle"
+                          onPointerDown={(event) => startFrameResize(event, {
+                            kind: "node",
+                            id: node.id,
+                            width: node.width,
+                            height: node.height,
+                            minWidth: node.minWidth,
+                            minHeight: node.minHeight,
+                          })}
+                        >
+                          <rect
+                            x={handleX}
+                            y={handleY}
+                            width={handleSize}
+                            height={handleSize}
+                            rx="4"
+                            className="frame-resize-hit"
+                          />
+                          <path
+                            d={[
+                              `M ${handleX + 5} ${handleY + handleSize - 4} L ${handleX + handleSize - 4} ${handleY + 5}`,
+                              `M ${handleX + 9} ${handleY + handleSize - 4} L ${handleX + handleSize - 4} ${handleY + 9}`,
+                            ].join(" ")}
+                            className="frame-resize-grip"
+                          />
+                        </g>
+                      )}
+                      </g>
+                    );
+                  })}
+                  {(renderLayout.moduleContainers || []).map((container) => {
+                    if (String(container.id || "").startsWith("layer:")) {
+                      return null;
+                    }
+                    const focused = container.id === activeContainerId;
+                    const inChain = activeContainerIdSet.has(container.id);
+                    const handleSize = 16;
+                    const handleX = container.x + container.width - handleSize - 6;
+                    const handleY = container.y + container.height - handleSize - 6;
+                    return (
+                      <g
+                        key={`container-resize-${container.id}`}
+                        data-id={container.id}
+                        className={`frame-resize-handle container-resize-handle ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
+                        onPointerDown={(event) => startFrameResize(event, {
+                          kind: "container",
+                          id: container.id,
+                          width: container.width,
+                          height: container.height,
+                          minWidth: container.minWidth,
+                          minHeight: container.minHeight,
+                        })}
+                      >
+                        <rect
+                          x={handleX}
+                          y={handleY}
+                          width={handleSize}
+                          height={handleSize}
+                          rx="4"
+                          className="frame-resize-hit"
+                        />
+                        <path
+                          d={[
+                            `M ${handleX + 5} ${handleY + handleSize - 4} L ${handleX + handleSize - 4} ${handleY + 5}`,
+                            `M ${handleX + 9} ${handleY + handleSize - 4} L ${handleX + handleSize - 4} ${handleY + 9}`,
+                          ].join(" ")}
+                          className="frame-resize-grip"
+                        />
+                      </g>
+                    );
+                  })}
+                  {(renderLayout.moduleContainers || []).map((container) => {
+                    if (String(container.id || "").startsWith("layer:") || String(container.id || "").startsWith("system:")) {
+                      return null;
+                    }
+                    const boundary = containerBoundaryPortsById[container.id];
+                    const iface = containerInterfaceById[container.id];
+                    if (!iface && !boundary) {
+                      return null;
+                    }
+                    const xLeft = container.x;
+                    const xRight = container.x + container.width;
+                    const isInterfaceFocused = activeContainerIdSet.has(container.id);
+                    return (
+                      <g
+                        key={`container-interface-${container.id}`}
+                        data-id={container.id}
+                        className={`container-interface-layer ${isInterfaceFocused ? "focused" : ""}`}
+                        pointerEvents="none"
+                      >
+                        {(boundary?.left || []).map((port, idx) => {
+                          if (!port?.count || !Number.isFinite(port.y)) return null;
+                          const y = port.y;
+                          return (
+                            <g key={`boundary-left-${container.id}-${idx}`} className="container-interface boundary in">
+                              <rect
+                                x={xLeft - 9}
+                                y={y - 7}
+                                width="18"
+                                height="14"
+                                rx="7"
+                                className="container-interface-pad in"
+                              />
+                              <line
+                                x1={xLeft - 16}
+                                y1={y}
+                                x2={xLeft + 16}
+                                y2={y}
+                                className="container-interface-stem in"
+                              />
+                              <circle cx={xLeft} cy={y} r="4.6" className="container-interface-dot in" />
+                            </g>
+                          );
+                        })}
+                        {(boundary?.right || []).map((port, idx) => {
+                          if (!port?.count || !Number.isFinite(port.y)) return null;
+                          const y = port.y;
+                          return (
+                            <g key={`boundary-right-${container.id}-${idx}`} className="container-interface boundary out">
+                              <rect
+                                x={xRight - 9}
+                                y={y - 7}
+                                width="18"
+                                height="14"
+                                rx="7"
+                                className="container-interface-pad out"
+                              />
+                              <line
+                                x1={xRight - 16}
+                                y1={y}
+                                x2={xRight + 16}
+                                y2={y}
+                                className="container-interface-stem out"
+                              />
+                              <circle cx={xRight} cy={y} r="4.6" className="container-interface-dot out" />
+                            </g>
+                          );
+                        })}
+                        {iface?.inCount > 0 && Number.isFinite(iface.inY) && (
+                          <g className="container-interface in">
+                            <line
+                              x1={xLeft - 12}
+                              y1={iface.inY}
+                              x2={xLeft + 8}
+                              y2={iface.inY}
+                              className="container-interface-stem in"
+                            />
+                            <circle cx={xLeft} cy={iface.inY} r="4.2" className="container-interface-dot in" />
+                            <text x={xLeft - 15} y={iface.inY - 6} textAnchor="end" className="container-interface-label in">
+                              IN {iface.inCount}
+                            </text>
+                          </g>
+                        )}
+                        {iface?.outCount > 0 && Number.isFinite(iface.outY) && (
+                          <g className="container-interface out">
+                            <line
+                              x1={xRight - 8}
+                              y1={iface.outY}
+                              x2={xRight + 12}
+                              y2={iface.outY}
+                              className="container-interface-stem out"
+                            />
+                            <circle cx={xRight} cy={iface.outY} r="4.2" className="container-interface-dot out" />
+                            <text x={xRight + 15} y={iface.outY - 6} className="container-interface-label out">
+                              OUT {iface.outCount}
+                            </text>
+                          </g>
+                        )}
                       </g>
                     );
                   })}

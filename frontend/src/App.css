@@ -890,7 +890,7 @@ button.active-focus-toggle {
 
 .module-container .module-container-body-glow {
   fill: none;
-  stroke: rgba(214, 112, 67, 0.86);
+  stroke: rgba(47, 111, 165, 0.6);
   stroke-width: calc(var(--container-stroke-width-focused, 2.8px) + 4px);
   opacity: 0;
   pointer-events: none;
@@ -915,19 +915,19 @@ button.active-focus-toggle {
 }
 
 .module-container.focused .module-container-body {
-  fill: rgba(248, 226, 206, 0.22);
-  stroke: rgba(216, 101, 53, 0.95);
+  fill: rgba(219, 236, 250, 0.22);
+  stroke: rgba(47, 111, 165, 0.95);
   stroke-width: var(--container-stroke-width-focused, 2.8px);
   filter:
-    drop-shadow(0 8px 14px rgba(183, 93, 53, 0.46))
-    drop-shadow(0 0 16px rgba(216, 101, 53, 0.58));
+    drop-shadow(0 8px 14px rgba(37, 92, 140, 0.3))
+    drop-shadow(0 0 16px rgba(55, 122, 178, 0.34));
 }
 
 .module-container.focused .module-container-body-glow {
   opacity: 1;
   filter:
-    drop-shadow(0 0 14px rgba(216, 101, 53, 0.62))
-    drop-shadow(0 0 24px rgba(216, 101, 53, 0.38));
+    drop-shadow(0 0 14px rgba(47, 111, 165, 0.42))
+    drop-shadow(0 0 24px rgba(47, 111, 165, 0.3));
 }
 
 .module-container .module-container-header-bg {
@@ -942,8 +942,8 @@ button.active-focus-toggle {
 }
 
 .module-container.focused .module-container-header-bg {
-  fill: rgba(255, 245, 236, 0.97);
-  stroke: rgba(201, 122, 72, 0.92);
+  fill: rgba(238, 246, 255, 0.97);
+  stroke: rgba(82, 140, 190, 0.92);
 }
 
 .module-container .module-container-header-title {
@@ -955,7 +955,7 @@ button.active-focus-toggle {
 }
 
 .module-container.focused .module-container-header-title {
-  fill: #8f4d2d;
+  fill: #244d73;
 }
 
 .module-container .module-container-toggle {
@@ -970,8 +970,8 @@ button.active-focus-toggle {
 }
 
 .module-container.focused .module-container-toggle-bg {
-  fill: rgba(254, 231, 212, 0.96);
-  stroke: rgba(193, 110, 62, 0.9);
+  fill: rgba(226, 241, 255, 0.96);
+  stroke: rgba(67, 123, 173, 0.9);
 }
 
 .module-container .module-container-toggle-text {
@@ -980,6 +980,77 @@ button.active-focus-toggle {
   font-weight: 800;
   font-family: "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
   pointer-events: none;
+}
+
+.container-interface-layer {
+  pointer-events: none;
+}
+
+.container-interface-pad {
+  /* Opaque pad to "notch" the container border and avoid any visual occlusion. */
+  fill: #f9fcff;
+  stroke-width: 1.55;
+}
+
+.container-interface-stem {
+  stroke-width: 2.1;
+  stroke-linecap: round;
+}
+
+.container-interface-dot {
+  stroke-width: 1.55;
+}
+
+.container-interface-label {
+  font-size: 9px;
+  font-weight: 800;
+  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+  letter-spacing: 0.02em;
+}
+
+.container-interface.in .container-interface-stem,
+.container-interface.in .container-interface-dot {
+  stroke: #2f6fa5;
+}
+
+.container-interface.in .container-interface-pad {
+  stroke: #2f6fa5;
+}
+
+.container-interface.in .container-interface-dot {
+  fill: #deedf9;
+}
+
+.container-interface.in .container-interface-label {
+  fill: #2b5f8c;
+}
+
+.container-interface.out .container-interface-stem,
+.container-interface.out .container-interface-dot {
+  stroke: #8a5d26;
+}
+
+.container-interface.out .container-interface-pad {
+  stroke: #8a5d26;
+}
+
+.container-interface.out .container-interface-dot {
+  fill: #f7e6d4;
+}
+
+.container-interface.out .container-interface-label {
+  fill: #855824;
+}
+
+.container-interface-layer.focused .container-interface-dot {
+  stroke-width: 1.9;
+  filter:
+    drop-shadow(0 0 6px rgba(52, 109, 161, 0.35))
+    drop-shadow(0 0 10px rgba(55, 122, 178, 0.22));
+}
+
+.container-interface-layer.focused .container-interface-pad {
+  filter: drop-shadow(0 2px 8px rgba(37, 92, 140, 0.18));
 }
 
 .hierarchy-rail {
@@ -1181,15 +1252,15 @@ button.active-focus-toggle {
 
 .node.context-focus .node-body,
 .node.focused .node-body {
-  stroke: #d86535;
-  stroke-width: 2.5;
-  fill: #fff4ea;
+  stroke: #2f6fa5;
+  stroke-width: 2.35;
+  fill: #f2f8ff;
 }
 
 .node.context-focus .node-header,
 .node.focused .node-header {
-  fill: #ffd9be;
-  stroke: #db8b56;
+  fill: #d8e9f9;
+  stroke: #88b0d6;
 }
 
 .node.context-path:not(.focused) .node-body {
@@ -1214,8 +1285,8 @@ button.active-focus-toggle {
 }
 
 .node.hovered .node-body {
-  stroke: #d86535;
-  stroke-width: 2.6;
+  stroke: #1f7f70;
+  stroke-width: 2.4;
 }
 
 .node .node-body {
@@ -1223,7 +1294,6 @@ button.active-focus-toggle {
   stroke: #3c6187;
   stroke-width: 1.6;
   transition: all 120ms ease;
-  filter: drop-shadow(1px 2px 2px rgba(52, 78, 104, 0.12));
 }
 
 .node .node-header {
@@ -1239,23 +1309,63 @@ button.active-focus-toggle {
 }
 
 .node.active .node-body {
-  stroke: var(--alert);
-  stroke-width: 3.2;
-  fill: #fff4eb;
+  stroke: #2f6fa5;
+  stroke-width: 2.9;
+  fill: #f5fbff;
   filter:
     drop-shadow(2px 4px 6px rgba(20, 62, 96, 0.18))
-    drop-shadow(0 0 10px rgba(216, 101, 53, 0.26));
+    drop-shadow(0 0 10px rgba(65, 128, 182, 0.24));
 }
 
 .node.active .node-header {
-  fill: #ffd9bf;
-  stroke: #db8b56;
+  fill: #dcecfb;
+  stroke: #81acd5;
 }
 
 .node.dragging .node-body {
   stroke: #1a8f7b;
   stroke-width: 2.6;
   filter: drop-shadow(3px 5px 7px rgba(20, 62, 96, 0.25));
+}
+
+.frame-resize-handle {
+  cursor: nwse-resize;
+}
+
+.frame-resize-hit {
+  fill: rgba(245, 250, 255, 0.75);
+  stroke: rgba(86, 120, 154, 0.9);
+  stroke-width: 1;
+}
+
+.frame-resize-grip {
+  fill: none;
+  stroke: rgba(42, 86, 122, 0.95);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.node:hover .frame-resize-hit {
+  fill: rgba(245, 250, 255, 0.92);
+}
+
+.node.active .frame-resize-hit {
+  stroke: rgba(47, 111, 165, 0.95);
+}
+
+.container-resize-handle .frame-resize-hit {
+  /* Keep container handles visible but avoid "masking" long border-parallel traces. */
+  fill: rgba(245, 250, 255, 0.38);
+}
+
+.container-resize-handle {
+  opacity: 0.18;
+}
+
+.container-resize-handle.chain,
+.container-resize-handle.focused {
+  opacity: 0.6;
 }
 
 .node-expand-toggle {

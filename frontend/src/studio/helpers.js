@@ -139,6 +139,10 @@ export function buildNodeVisual(node, ports, summaryText, summarySource) {
   return {
     width,
     height,
+    // Treat the auto-computed box as the minimum safe size; manual resizing can expand/shrink
+    // but never below this, keeping ports/text inside the frame.
+    minWidth: width,
+    minHeight: height,
     inPorts,
     outPorts,
     displayInPorts,
@@ -566,8 +570,14 @@ function normalizeToPositive(nodes, lanes, moduleContainers, minCoord = 8) {
     return { nodes, lanes, moduleContainers, dx, dy };
   }
   const shift = (item) => ({ ...item, x: item.x + dx, y: item.y + dy });
+  const shiftNode = (node) => ({
+    ...node,
+    x: node.x + dx,
+    y: node.y + dy,
+    portStartY: Number.isFinite(node.portStartY) ? node.portStartY + dy : node.portStartY,
+  });
   return {
-    nodes: nodes.map(shift),
+    nodes: nodes.map(shiftNode),
     lanes: lanes.map(shift),
     moduleContainers: (moduleContainers || []).map(shift),
     dx,
@@ -1086,10 +1096,23 @@ export function applyManualLayout(layout, manualPositions) {
     if (!manual) {
       return node;
     }
+    const manualX = Number(manual.x);
+    const manualY = Number(manual.y);
+    const manualWidth = Number(manual.width);
+    const manualHeight = Number(manual.height);
+    const minWidth = Number(node.minWidth || node.width) || 0;
+    const minHeight = Number(node.minHeight || node.height) || 0;
+    const nextX = Number.isFinite(manualX) ? manualX : node.x;
+    const nextY = Number.isFinite(manualY) ? manualY : node.y;
+    const nextWidth = Number.isFinite(manualWidth) ? Math.max(minWidth, manualWidth) : node.width;
+    const nextHeight = Number.isFinite(manualHeight) ? Math.max(minHeight, manualHeight) : node.height;
     return {
       ...node,
-      x: manual.x,
-      y: manual.y,
+      x: nextX,
+      y: nextY,
+      width: nextWidth,
+      height: nextHeight,
+      portStartY: nextY + (Number(node.portStartOffset) || 0),
     };
   });
   const groupedByLayer = {};
@@ -1117,14 +1140,18 @@ export function applyManualLayout(layout, manualPositions) {
     };
   });
   const nodeById = Object.fromEntries(nodes.map((item) => [item.id, item]));
-  const moduleContainers = materializeExpandedContainers(layout.containerDefs || [], nodeById);
+  const moduleContainers = materializeExpandedContainers(layout.containerDefs || [], nodeById, {
+    sizeOverridesById: manualPositions,
+  });
   const expandedLanes = expandLanesToContain(lanes, moduleContainers);
   const orderedLayers = (layout.lanes || []).map((lane) => lane.layer);
   const packed = packLanesHorizontally(expandedLanes, orderedLayers, 96, Math.min(...expandedLanes.map((lane) => lane.x)));
   const shiftByLayer = packed.shiftByLayer || {};
   const shiftedNodes = nodes.map((node) => ({ ...node, x: node.x + (shiftByLayer[node.layer] || 0) }));
   const shiftedNodeById = Object.fromEntries(shiftedNodes.map((item) => [item.id, item]));
-  const shiftedContainers = materializeExpandedContainers(layout.containerDefs || [], shiftedNodeById);
+  const shiftedContainers = materializeExpandedContainers(layout.containerDefs || [], shiftedNodeById, {
+    sizeOverridesById: manualPositions,
+  });
   const normalized = normalizeToPositive(shiftedNodes, packed.lanes, shiftedContainers, 8);
   const sized = boundsWithPadding(layout, normalized.nodes, normalized.lanes, normalized.moduleContainers);
   return {
@@ -1154,9 +1181,117 @@ export function stableHash(text) {
   }
   return hash;
 }
-export function buildEdgeGeometries(edges, nodeById) {
+export function buildEdgeGeometries(edges, nodeById, options = {}) {
   if (!edges.length) {
     return {};
+  }
+  const {
+    ownerContainerByNodeId = null,
+    containerById = null,
+    descendantsByModule = null,
+  } = options || {};
+
+  const obstacleNodes = Object.values(nodeById || {});
+  const obstacleRects = obstacleNodes
+    .map((node) => {
+      if (!node) return null;
+      return {
+        id: node.id,
+        x: Number(node.x) || 0,
+        y: Number(node.y) || 0,
+        width: Number(node.width) || 0,
+        height: Number(node.height) || 0,
+      };
+    })
+    .filter((rect) => rect && rect.width > 0 && rect.height > 0);
+  const boundsTop = Math.max(8, Math.min(...obstacleRects.map((rect) => rect.y)) - 90);
+  const boundsBottom = Math.max(boundsTop + 120, Math.max(...obstacleRects.map((rect) => rect.y + rect.height)) + 90);
+
+  const EPS = 0.12;
+  const OBSTACLE_MARGIN = 10;
+  const inflateRect = (rect, margin = OBSTACLE_MARGIN) => ({
+    ...rect,
+    x: rect.x - margin,
+    y: rect.y - margin,
+    width: rect.width + margin * 2,
+    height: rect.height + margin * 2,
+  });
+  function horizontalHitsRect(x0, x1, y, rect) {
+    const minX = Math.min(x0, x1);
+    const maxX = Math.max(x0, x1);
+    if (!(y > rect.y + EPS && y < rect.y + rect.height - EPS)) {
+      return false;
+    }
+    return maxX > rect.x + EPS && minX < rect.x + rect.width - EPS;
+  }
+  function verticalHitsRect(y0, y1, x, rect) {
+    const minY = Math.min(y0, y1);
+    const maxY = Math.max(y0, y1);
+    if (!(x > rect.x + EPS && x < rect.x + rect.width - EPS)) {
+      return false;
+    }
+    return maxY > rect.y + EPS && minY < rect.y + rect.height - EPS;
+  }
+  function countIntersections(points, sourceId, targetId) {
+    if (!points || points.length < 2) return 0;
+    let count = 0;
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const a = points[i];
+      const b = points[i + 1];
+      const dx = Math.abs(a.x - b.x);
+      const dy = Math.abs(a.y - b.y);
+      if (dx < EPS && dy < EPS) {
+        continue;
+      }
+      const horizontal = dy < EPS;
+      const vertical = dx < EPS;
+      if (!horizontal && !vertical) {
+        continue;
+      }
+      for (const rect0 of obstacleRects) {
+        if (!rect0 || rect0.id === sourceId || rect0.id === targetId) {
+          continue;
+        }
+        const rect = inflateRect(rect0);
+        if (horizontal && horizontalHitsRect(a.x, b.x, a.y, rect)) {
+          count += 1;
+          break;
+        }
+        if (vertical && verticalHitsRect(a.y, b.y, a.x, rect)) {
+          count += 1;
+          break;
+        }
+      }
+    }
+    return count;
+  }
+  const pathLength = (points) => {
+    if (!points || points.length < 2) return 0;
+    let length = 0;
+    for (let i = 0; i < points.length - 1; i += 1) {
+      length += Math.abs(points[i + 1].x - points[i].x) + Math.abs(points[i + 1].y - points[i].y);
+    }
+    return length;
+  };
+  const turnsCount = (points) => Math.max(0, (points?.length || 0) - 2);
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  function dedupePoints(points) {
+    const out = [];
+    for (const point of points || []) {
+      const last = out[out.length - 1];
+      if (last && Math.abs(last.x - point.x) < EPS && Math.abs(last.y - point.y) < EPS) {
+        continue;
+      }
+      out.push(point);
+    }
+    return out;
+  }
+  function pointsToPath(points) {
+    const clean = dedupePoints(points);
+    if (clean.length < 2) return "";
+    return clean
+      .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+      .join(" ");
   }
   const records = edges
     .map((edge) => {
@@ -1262,6 +1397,15 @@ export function buildEdgeGeometries(edges, nodeById) {
     });
   }
   const output = {};
+  const GATE_OUTSIDE_MARGIN = 18;
+  const crossesContainerBorder = (containerId, otherNodeId) => {
+    if (!containerId) return false;
+    const descendants = descendantsByModule?.[containerId];
+    // When in doubt, assume it crosses so we push the gate outside rather than
+    // routing a line through a container border without a clear interface.
+    if (!descendants || typeof descendants.has !== "function") return true;
+    return !descendants.has(otherNodeId);
+  };
   records.forEach((item) => {
     const edgeId = item.edge.id;
     const outMeta = outgoingByEdgeId[edgeId] || { index: 0, count: 1 };
@@ -1286,6 +1430,37 @@ export function buildEdgeGeometries(edges, nodeById) {
     const direction = item.leftToRight ? 1 : -1;
     let sourceGateX = startX + direction * (24 + outMeta.index * 8);
     let targetGateX = endX - direction * (24 + inMeta.index * 8);
+
+    // When an edge crosses a container boundary, ensure the first routing "gate"
+    // for that endpoint is outside the container. This makes the border crossing
+    // happen near the internal module (startY/endY) and aligns with interface
+    // markers rendered on the container border.
+    if (ownerContainerByNodeId && containerById) {
+      const srcOwner = ownerContainerByNodeId[item.edge.src_id] || "";
+      if (srcOwner && crossesContainerBorder(srcOwner, item.edge.dst_id)) {
+        const container = containerById[srcOwner];
+        if (container) {
+          const right = (Number(container.x) || 0) + (Number(container.width) || 0);
+          const left = Number(container.x) || 0;
+          sourceGateX = direction === 1
+            ? Math.max(sourceGateX, right + GATE_OUTSIDE_MARGIN)
+            : Math.min(sourceGateX, left - GATE_OUTSIDE_MARGIN);
+        }
+      }
+      const dstOwner = ownerContainerByNodeId[item.edge.dst_id] || "";
+      if (dstOwner && crossesContainerBorder(dstOwner, item.edge.src_id)) {
+        const container = containerById[dstOwner];
+        if (container) {
+          const right = (Number(container.x) || 0) + (Number(container.width) || 0);
+          const left = Number(container.x) || 0;
+          // Note: enter destination from the opposite side of the travel direction.
+          targetGateX = direction === 1
+            ? Math.min(targetGateX, left - GATE_OUTSIDE_MARGIN)
+            : Math.max(targetGateX, right + GATE_OUTSIDE_MARGIN);
+        }
+      }
+    }
+
     const minGateGap = 24;
     if (item.leftToRight && sourceGateX >= targetGateX - minGateGap) {
       const center = (startX + endX) / 2;
@@ -1305,17 +1480,131 @@ export function buildEdgeGeometries(edges, nodeById) {
     } else {
       bridgeX = Math.min(sourceGateX - 10, Math.max(targetGateX + 10, bridgeX));
     }
-    const labelX = bridgeX + (item.leftToRight ? 6 : -6);
-    const labelY = (startY + endY) / 2 - 4;
+    const minY = Math.min(startY, endY);
+    const maxY = Math.max(startY, endY);
+    const blockedRanges = [];
+    for (const obstacle of obstacleNodes) {
+      if (!obstacle || obstacle.id === item.edge.src_id || obstacle.id === item.edge.dst_id) {
+        continue;
+      }
+      const top = obstacle.y - 8;
+      const bottom = obstacle.y + obstacle.height + 8;
+      if (bottom < minY || top > maxY) {
+        continue;
+      }
+      blockedRanges.push([obstacle.x - 16, obstacle.x + obstacle.width + 16]);
+    }
+    blockedRanges.sort((a, b) => a[0] - b[0]);
+    const mergedRanges = [];
+    for (const range of blockedRanges) {
+      const last = mergedRanges[mergedRanges.length - 1];
+      if (!last || range[0] > last[1] + 1) {
+        mergedRanges.push([range[0], range[1]]);
+      } else {
+        last[1] = Math.max(last[1], range[1]);
+      }
+    }
+    const minBridgeX = Math.min(sourceGateX, targetGateX) + 10;
+    const maxBridgeX = Math.max(sourceGateX, targetGateX) - 10;
+    const insideBlockedRange = (x) => mergedRanges.some(([left, right]) => x >= left && x <= right);
+    if (insideBlockedRange(bridgeX)) {
+      const candidates = [bridgeX];
+      for (const [left, right] of mergedRanges) {
+        candidates.push(left - 12, right + 12);
+      }
+      candidates.push(sourceGateX + (item.leftToRight ? 14 : -14));
+      candidates.push(targetGateX + (item.leftToRight ? -14 : 14));
+      let bestBridgeX = bridgeX;
+      let bestScore = Number.POSITIVE_INFINITY;
+      for (const rawCandidate of candidates) {
+        const candidate = Math.max(minBridgeX, Math.min(maxBridgeX, rawCandidate));
+        const blockedPenalty = insideBlockedRange(candidate) ? 100000 : 0;
+        const score = blockedPenalty + Math.abs(candidate - bridgeX);
+        if (score < bestScore) {
+          bestScore = score;
+          bestBridgeX = candidate;
+        }
+      }
+      bridgeX = bestBridgeX;
+    }
+    const basePoints = [
+      { x: startX, y: startY },
+      { x: sourceGateX, y: startY },
+      { x: bridgeX, y: startY },
+      { x: bridgeX, y: endY },
+      { x: targetGateX, y: endY },
+      { x: endX, y: endY },
+    ];
+
+    const candidates = [];
+    candidates.push({
+      kind: "bridge",
+      points: basePoints,
+      label: { x: bridgeX + (item.leftToRight ? 6 : -6), y: (startY + endY) / 2 - 4 },
+    });
+
+    const pairYOffset = (pairMeta.index - (pairMeta.count - 1) / 2) * 10;
+    const corridorBase = (startY + endY) / 2 + pairYOffset + (item.edge.kind === "interface" ? -6 : item.edge.kind === "dependency_file" ? 6 : 0);
+    const corridorSteps = [0, 26, -26, 52, -52, 78, -78, 104, -104];
+    const extraY = [
+      Math.min(startY, endY) - 64,
+      Math.max(startY, endY) + 64,
+    ];
+    const corridorYs = Array.from(new Set([
+      ...corridorSteps.map((step) => corridorBase + step),
+      ...extraY,
+    ].map((value) => clamp(value, boundsTop, boundsBottom))));
+
+    for (const routeY of corridorYs) {
+      const corridorPoints = [
+        { x: startX, y: startY },
+        { x: sourceGateX, y: startY },
+        { x: sourceGateX, y: routeY },
+        { x: targetGateX, y: routeY },
+        { x: targetGateX, y: endY },
+        { x: endX, y: endY },
+      ];
+      candidates.push({
+        kind: "corridor",
+        points: corridorPoints,
+        label: { x: (sourceGateX + targetGateX) / 2, y: routeY - 4 },
+      });
+    }
+
+    let best = candidates[0];
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (const candidate of candidates) {
+      const points = dedupePoints(candidate.points);
+      const intersections = countIntersections(points, item.edge.src_id, item.edge.dst_id);
+      const length = pathLength(points);
+      const turns = turnsCount(points);
+      let deviationPenalty = 0;
+      if (candidate.kind === "corridor" && points.length >= 4) {
+        const routeY = points[2]?.y;
+        if (Number.isFinite(routeY)) {
+          deviationPenalty = (Math.abs(routeY - startY) + Math.abs(routeY - endY)) * 0.9;
+        }
+      }
+      const score = intersections * 1_000_000 + length + turns * 6 + deviationPenalty;
+      if (score < bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+      if (intersections === 0 && score <= bestScore) {
+        // Keep searching briefly for the shortest non-intersecting candidate.
+        // (We still score length/turns, but this is an early-exit optimization.)
+        if (score < 9000) {
+          // typical short path
+          break;
+        }
+      }
+    }
+
+    const chosenPoints = dedupePoints(best.points);
+    const labelX = best.label.x;
+    const labelY = best.label.y;
     output[edgeId] = {
-      path: [
-        `M ${startX} ${startY}`,
-        `L ${sourceGateX} ${startY}`,
-        `L ${bridgeX} ${startY}`,
-        `L ${bridgeX} ${endY}`,
-        `L ${targetGateX} ${endY}`,
-        `L ${endX} ${endY}`,
-      ].join(" "),
+      path: pointsToPath(chosenPoints),
       startX,
       startY,
       endX,

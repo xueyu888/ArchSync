@@ -1,6 +1,6 @@
 {
   "studioUrl": "http://127.0.0.1:5173/",
-  "startedAt": "2026-02-14T03:58:22.516Z",
+  "startedAt": "2026-02-18T15:34:26.591Z",
   "screenshots": {
     "overview": "docs/qa/studio-ui-regression-latest-overview.png",
     "hierarchy": "docs/qa/studio-ui-regression-latest-hierarchy.png",
@@ -17,9 +17,63 @@
     "renderedLayerNodes": [],
     "nonLayerContainerCount": 26,
     "dimmedNodes": 0,
-    "dimmedEdges": 0
+    "dimmedEdges": 0,
+    "edgeNodeIntersectionCount": 0,
+    "edgeNodeIntersections": []
   },
   "failures": [],
+  "resize_smoke": {
+    "id": "c2291ca3f69cace0",
+    "before": {
+      "width": 250,
+      "height": 134
+    },
+    "after": {
+      "width": 372,
+      "height": 192
+    }
+  },
+  "resize_smoke_metrics": {
+    "containerCount": 2,
+    "containmentViolations": [],
+    "headerCount": 1,
+    "headerContainmentViolations": [],
+    "headerPlacementViolations": [],
+    "headerOverlapPairs": [],
+    "headerNodeOverlapPairs": [],
+    "renderedLayerNodes": [],
+    "nonLayerContainerCount": 0,
+    "dimmedNodes": 0,
+    "dimmedEdges": 0,
+    "edgeNodeIntersectionCount": 0,
+    "edgeNodeIntersections": []
+  },
+  "container_resize_smoke": {
+    "id": "system:ArchSync System",
+    "before": {
+      "width": 1820,
+      "height": 396
+    },
+    "after": {
+      "width": 1896,
+      "height": 468
+    }
+  },
+  "container_resize_smoke_metrics": {
+    "containerCount": 1,
+    "containmentViolations": [],
+    "headerCount": 1,
+    "headerContainmentViolations": [],
+    "headerPlacementViolations": [],
+    "headerOverlapPairs": [],
+    "headerNodeOverlapPairs": [],
+    "renderedLayerNodes": [],
+    "nonLayerContainerCount": 0,
+    "dimmedNodes": 0,
+    "dimmedEdges": 0,
+    "edgeNodeIntersectionCount": 0,
+    "edgeNodeIntersections": []
+  },
   "deepTarget": {
     "id": "52094ceb6fe5886d",
     "level": "8",
@@ -36,13 +90,15 @@
     "renderedLayerNodes": [],
     "nonLayerContainerCount": 7,
     "dimmedNodes": 0,
-    "dimmedEdges": 0
+    "dimmedEdges": 0,
+    "edgeNodeIntersectionCount": 0,
+    "edgeNodeIntersections": []
   },
-  "finishedAt": "2026-02-14T03:58:43.057Z",
-  "sourceReport": "docs/qa/studio-ui-regression-2026-02-14T03-58-22-100Z.json",
+  "finishedAt": "2026-02-18T15:34:47.192Z",
+  "sourceReport": "docs/qa/studio-ui-regression-2026-02-18T15-34-26-531Z.json",
   "sourceScreenshots": {
-    "overview": "docs/qa/studio-ui-regression-2026-02-14T03-58-22-100Z-overview.png",
-    "hierarchy": "docs/qa/studio-ui-regression-2026-02-14T03-58-22-100Z-hierarchy.png",
-    "stress": "docs/qa/studio-ui-regression-2026-02-14T03-58-22-100Z-stress.png"
+    "overview": "docs/qa/studio-ui-regression-2026-02-18T15-34-26-531Z-overview.png",
+    "hierarchy": "docs/qa/studio-ui-regression-2026-02-18T15-34-26-531Z-hierarchy.png",
+    "stress": "docs/qa/studio-ui-regression-2026-02-18T15-34-26-531Z-stress.png"
   }
 }

@@ -104,11 +104,12 @@ export function buildExpandedContainerDefs(
   return defs;
 }
 
-export function materializeExpandedContainers(containerDefs, nodeById) {
+export function materializeExpandedContainers(containerDefs, nodeById, options = {}) {
   const defs = containerDefs || [];
   if (!defs.length) {
     return [];
   }
+  const sizeOverridesById = options?.sizeOverridesById || {};
   const defById = Object.fromEntries(defs.map((def) => [def.id, def]));
   const childrenByParent = {};
   for (const def of defs) {
@@ -187,6 +188,22 @@ export function materializeExpandedContainers(containerDefs, nodeById) {
     for (const child of childBoxes) {
       box = expandToContain(box, child, childInset);
     }
+
+    const minWidth = box.width;
+    const minHeight = box.height;
+    const override = sizeOverridesById[defId];
+    const overrideWidth = override ? Number(override.width) : NaN;
+    const overrideHeight = override ? Number(override.height) : NaN;
+    const nextWidth = Number.isFinite(overrideWidth) ? Math.max(minWidth, overrideWidth) : minWidth;
+    const nextHeight = Number.isFinite(overrideHeight) ? Math.max(minHeight, overrideHeight) : minHeight;
+    box = {
+      ...box,
+      minWidth,
+      minHeight,
+      width: nextWidth,
+      height: nextHeight,
+    };
+
     boxesById[defId] = box;
     return box;
   }

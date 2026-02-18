@@ -26,6 +26,9 @@ docs/qa/studio-ui-regression-*.png
 docs/qa/studio-ui-regression-*.json
 docs/qa/crop-*.png
 docs/qa/debug-*.png
+docs/qa/hierarchy-*.png
+docs/qa/stress-*.png
+docs/qa/zoom-*.png
 docs/qa/studio-expand-all-*/
 !docs/qa/studio-ui-regression-latest*.png
 !docs/qa/studio-ui-regression-latest*.json
