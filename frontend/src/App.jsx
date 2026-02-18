@@ -804,6 +804,106 @@ function App() {
     }
     return { edgeIds, neighborIds };
   }, [hoverNodeId, visibleEdges]);
+  const edgeLabelPositionsById = useMemo(() => {
+    if (!showEdgeLabels || !visibleEdges.length) {
+      return {};
+    }
+
+    const clipLen = denseLabelMode ? 22 : 34;
+    const charWidth = denseLabelMode ? 5.6 : 6.2;
+    const labelHeight = denseLabelMode ? 12 : 14;
+    const tryStep = labelHeight;
+    const tryOffsets = [0, tryStep, -tryStep, tryStep * 2, -tryStep * 2, tryStep * 3, -tryStep * 3];
+
+    const overlaps = (a, b) => (
+      a.x < b.x + b.width
+      && a.x + a.width > b.x
+      && a.y < b.y + b.height
+      && a.y + a.height > b.y
+    );
+
+    const candidates = [];
+    for (const edge of visibleEdges) {
+      const geometry = edgeGeometryById[edge.id];
+      if (!geometry) continue;
+
+      const selectedByEdge = selectedEdgeId === edge.id;
+      const relatedToSelectedModule = selectedIsVisible
+        && (edge.src_id === selectedModuleId || edge.dst_id === selectedModuleId);
+      const relatedToHover = !!hoverNodeId
+        && (edge.src_id === hoverNodeId || edge.dst_id === hoverNodeId);
+      const selected = selectedByEdge
+        || (!selectedEdgeId && relatedToSelectedModule)
+        || relatedToHover;
+      const showLabel = !denseLabelMode || selected || selectedByEdge || relatedToHover;
+      if (!showLabel) continue;
+
+      const labelText = studio.clip(edge.label, clipLen);
+      candidates.push({
+        id: edge.id,
+        labelText,
+        selectedByEdge,
+        selected,
+        geometry,
+        sortKey: `${edge.kind}:${edge.src_id}:${edge.dst_id}:${edge.id}`,
+      });
+    }
+
+    // Place the most "important" labels first so they stay closest to the edge path.
+    candidates.sort((a, b) => (
+      (b.selectedByEdge ? 1 : 0) - (a.selectedByEdge ? 1 : 0)
+      || (b.selected ? 1 : 0) - (a.selected ? 1 : 0)
+      || a.sortKey.localeCompare(b.sortKey)
+    ));
+
+    const placed = [];
+    const output = {};
+    const minY = 12;
+    const maxY = Math.max(minY, (Number(renderLayout.height) || 0) - 6);
+
+    for (const item of candidates) {
+      const baseX = Number(item.geometry.labelX) || 0;
+      const baseY = Number(item.geometry.labelY) || 0;
+      const textLen = Math.max(0, item.labelText.length);
+      const estWidth = Math.max(34, textLen * charWidth + 10);
+
+      let best = { x: baseX, y: Math.min(maxY, Math.max(minY, baseY)) };
+      let bestBox = null;
+      for (const dy of tryOffsets) {
+        const y = Math.min(maxY, Math.max(minY, baseY + dy));
+        // SVG text uses the baseline as `y`; approximate bbox above baseline.
+        const box = { x: baseX - 2, y: y - (labelHeight - 2), width: estWidth + 4, height: labelHeight };
+        if (placed.some((other) => overlaps(box, other))) {
+          continue;
+        }
+        best = { x: baseX, y };
+        bestBox = box;
+        break;
+      }
+      if (!bestBox) {
+        bestBox = {
+          x: best.x - 2,
+          y: best.y - (labelHeight - 2),
+          width: estWidth + 4,
+          height: labelHeight,
+        };
+      }
+      output[item.id] = best;
+      placed.push(bestBox);
+    }
+
+    return output;
+  }, [
+    showEdgeLabels,
+    visibleEdges,
+    denseLabelMode,
+    edgeGeometryById,
+    selectedEdgeId,
+    selectedModuleId,
+    selectedIsVisible,
+    hoverNodeId,
+    renderLayout.height,
+  ]);
   const selectionNeighborIds = useMemo(() => {
     if (!selectedModuleId) return new Set();
     const neighborIds = new Set();
@@ -2271,6 +2371,10 @@ function App() {
                   || (!selectedEdgeId && relatedToSelectedModule)
                   || relatedToHover;
                 const showLabel = showEdgeLabels && (!denseLabelMode || selected || selectedByEdge || relatedToHover);
+                const labelText = studio.clip(edge.label, denseLabelMode ? 22 : 34);
+                const labelPos = edgeLabelPositionsById[edge.id];
+                const labelX = labelPos?.x ?? geometry.labelX;
+                const labelY = labelPos?.y ?? geometry.labelY;
                 let dimmed = false;
                 if (selectedEdgeId) {
                   dimmed = edge.id !== selectedEdgeId;
@@ -2385,10 +2489,10 @@ function App() {
                     {showLabel && (
                       <text
                         className={`edge-label ${selected ? "selected" : ""} ${denseLabelMode ? "compact" : ""}`}
-                        x={geometry.labelX}
-                        y={geometry.labelY}
+                        x={labelX}
+                        y={labelY}
                       >
-                        {studio.clip(edge.label, denseLabelMode ? 22 : 34)}
+                        {labelText}
                       </text>
                     )}
                   </g>

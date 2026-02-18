@@ -1,6 +1,6 @@
 {
   "studioUrl": "http://127.0.0.1:5173/",
-  "startedAt": "2026-02-18T22:34:12.668Z",
+  "startedAt": "2026-02-18T23:06:25.127Z",
   "screenshots": {
     "overview": "docs/qa/studio-ui-regression-latest-overview.png",
     "hierarchy": "docs/qa/studio-ui-regression-latest-hierarchy.png",
@@ -19,7 +19,9 @@
     "dimmedNodes": 0,
     "dimmedEdges": 0,
     "edgeNodeIntersectionCount": 0,
-    "edgeNodeIntersections": []
+    "edgeNodeIntersections": [],
+    "edgeLabelCount": 0,
+    "edgeLabelOverlapPairs": []
   },
   "failures": [],
   "resize_smoke": {
@@ -46,7 +48,9 @@
     "dimmedNodes": 0,
     "dimmedEdges": 0,
     "edgeNodeIntersectionCount": 0,
-    "edgeNodeIntersections": []
+    "edgeNodeIntersections": [],
+    "edgeLabelCount": 6,
+    "edgeLabelOverlapPairs": []
   },
   "container_resize_smoke": {
     "id": "system:ArchSync System",
@@ -72,7 +76,9 @@
     "dimmedNodes": 0,
     "dimmedEdges": 0,
     "edgeNodeIntersectionCount": 0,
-    "edgeNodeIntersections": []
+    "edgeNodeIntersections": [],
+    "edgeLabelCount": 6,
+    "edgeLabelOverlapPairs": []
   },
   "deepTarget": {
     "id": "52094ceb6fe5886d",
@@ -92,13 +98,15 @@
     "dimmedNodes": 0,
     "dimmedEdges": 0,
     "edgeNodeIntersectionCount": 0,
-    "edgeNodeIntersections": []
+    "edgeNodeIntersections": [],
+    "edgeLabelCount": 27,
+    "edgeLabelOverlapPairs": []
   },
-  "finishedAt": "2026-02-18T22:34:33.322Z",
-  "sourceReport": "docs/qa/studio-ui-regression-2026-02-18T22-34-12-587Z.json",
+  "finishedAt": "2026-02-18T23:06:48.863Z",
+  "sourceReport": "docs/qa/studio-ui-regression-2026-02-18T23-06-24-629Z.json",
   "sourceScreenshots": {
-    "overview": "docs/qa/studio-ui-regression-2026-02-18T22-34-12-587Z-overview.png",
-    "hierarchy": "docs/qa/studio-ui-regression-2026-02-18T22-34-12-587Z-hierarchy.png",
-    "stress": "docs/qa/studio-ui-regression-2026-02-18T22-34-12-587Z-stress.png"
+    "overview": "docs/qa/studio-ui-regression-2026-02-18T23-06-24-629Z-overview.png",
+    "hierarchy": "docs/qa/studio-ui-regression-2026-02-18T23-06-24-629Z-hierarchy.png",
+    "stress": "docs/qa/studio-ui-regression-2026-02-18T23-06-24-629Z-stress.png"
   }
 }

@@ -266,6 +266,30 @@ async function main() {
           }
         }
 
+        const edgeLabelEls = Array.from(document.querySelectorAll("svg.diagram text.edge-label"));
+        const edgeLabels = [];
+        for (const el of edgeLabelEls) {
+          const bb = bboxOf(el);
+          if (bb) {
+            edgeLabels.push({ bb, text: (el.textContent || "").trim() });
+          }
+        }
+        const edgeLabelOverlapPairs = [];
+        for (let i = 0; i < edgeLabels.length; i += 1) {
+          for (let j = i + 1; j < edgeLabels.length; j += 1) {
+            const area = overlapArea(edgeLabels[i].bb, edgeLabels[j].bb);
+            if (area > 12) {
+              edgeLabelOverlapPairs.push({
+                i,
+                j,
+                area,
+                a: edgeLabels[i].text,
+                b: edgeLabels[j].text,
+              });
+            }
+          }
+        }
+
         return {
           containerCount: bodyById.size,
           containmentViolations,
@@ -280,6 +304,8 @@ async function main() {
           dimmedEdges,
           edgeNodeIntersectionCount,
           edgeNodeIntersections,
+          edgeLabelCount: edgeLabels.length,
+          edgeLabelOverlapPairs,
         };
       });
     }
@@ -332,6 +358,9 @@ async function main() {
       }, resizeTargetId);
       report.resize_smoke = { id: resizeTargetId, before, after };
       report.resize_smoke_metrics = await evaluateMetrics();
+      if (report.resize_smoke_metrics?.edgeLabelOverlapPairs?.length) {
+        report.failures.push(`edge label overlaps (resize smoke): ${report.resize_smoke_metrics.edgeLabelOverlapPairs.length}`);
+      }
 
       const resizeContainerId = await page.evaluate(() => {
         const bodies = Array.from(document.querySelectorAll("svg.diagram g.module-container-body-layer"));
@@ -382,6 +411,9 @@ async function main() {
 
         report.container_resize_smoke = { id: resizeContainerId, before: cBefore, after: cAfter };
         report.container_resize_smoke_metrics = await evaluateMetrics();
+        if (report.container_resize_smoke_metrics?.edgeLabelOverlapPairs?.length) {
+          report.failures.push(`edge label overlaps (container resize smoke): ${report.container_resize_smoke_metrics.edgeLabelOverlapPairs.length}`);
+        }
       }
 
       // Reset manual overrides so later screenshots remain comparable.
@@ -442,6 +474,9 @@ async function main() {
 
     await page.screenshot({ path: hierarchyPng, fullPage: true });
     report.hierarchy_metrics = await evaluateMetrics();
+    if (report.hierarchy_metrics?.edgeLabelOverlapPairs?.length) {
+      report.failures.push(`edge label overlaps (hierarchy): ${report.hierarchy_metrics.edgeLabelOverlapPairs.length}`);
+    }
 
     if (expandTargetId) {
       const headerToggle = page.locator(`svg.diagram g.hierarchy-chip[data-id="${expandTargetId}"] g.hierarchy-chip-toggle`).first();
@@ -488,6 +523,9 @@ async function main() {
 
     // DOM/geometry checks (containment, chip overlaps, no layer:* nodes rendered).
     report.metrics = await evaluateMetrics();
+    if (report.metrics?.edgeLabelOverlapPairs?.length) {
+      report.failures.push(`edge label overlaps (stress): ${report.metrics.edgeLabelOverlapPairs.length}`);
+    }
 
     await page.screenshot({ path: stressPng, fullPage: true });
   } catch (error) {
@@ -520,6 +558,10 @@ async function main() {
       };
       await fs.writeFile(latestReportJson, JSON.stringify(latestReport, null, 2) + "\n", "utf8");
     }
+  }
+
+  if (report.failures.length) {
+    process.exitCode = 1;
   }
 
   process.stdout.write(`${path.relative(repoRoot, reportJson)}\n`);
