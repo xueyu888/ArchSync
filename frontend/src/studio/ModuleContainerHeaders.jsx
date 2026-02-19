@@ -23,6 +23,7 @@ export function ModuleContainerHeaders({
         const focused = container.id === activeContainerId;
         const inChain = activeContainerIdSet.has(container.id);
         const level = Number(container.level || 0);
+        const tone = studio.frameToneByLevel(level);
         const title = studio.clipByUnits(container.name, 18);
         const label = `${title} · L${level}`;
         const units = studio.textUnits(label);
@@ -49,6 +50,13 @@ export function ModuleContainerHeaders({
             data-id={container.id}
             data-parent-id={container.parentId || ""}
             className={`module-container module-container-header-layer hierarchy-chip ${focused ? "focused" : ""} ${inChain ? "chain" : ""}`}
+            style={{
+              "--container-chip-fill": tone.chipFill,
+              "--container-chip-stroke": tone.chipStroke,
+              "--container-chip-title": tone.chipTitle,
+              "--container-toggle-fill": tone.toggleFill,
+              "--container-toggle-stroke": tone.toggleStroke,
+            }}
             onPointerOver={() => onHoverContainer?.(container.id, true)}
             onPointerOut={(event) => {
               const next = event.relatedTarget;

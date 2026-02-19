@@ -2245,7 +2245,8 @@ function App() {
                   {(renderLayout.moduleContainers || []).map((container) => {
                     const focused = container.id === activeContainerId;
                     const inChain = activeContainerIdSet.has(container.id);
-                    const level = Math.max(1, Number(container.level || 1));
+                    const level = Math.max(0, Number(container.level || 0));
+                    const tone = studio.frameToneByLevel(level);
                     const baseStrokeWidth = Math.min(4.2, 1.85 + (level - 1) * 0.2);
                     const chainStrokeWidth = baseStrokeWidth + 0.35;
                     const focusedStrokeWidth = baseStrokeWidth + 0.95;
@@ -2260,6 +2261,16 @@ function App() {
                           "--container-stroke-width": `${baseStrokeWidth}px`,
                           "--container-stroke-width-chain": `${chainStrokeWidth}px`,
                           "--container-stroke-width-focused": `${focusedStrokeWidth}px`,
+                          "--container-stroke": tone.stroke,
+                          "--container-stroke-chain": tone.strokeChain,
+                          "--container-stroke-focused": tone.strokeFocused,
+                          "--container-fill": tone.fill,
+                          "--container-fill-focused": tone.fillFocused,
+                          "--container-chip-fill": tone.chipFill,
+                          "--container-chip-stroke": tone.chipStroke,
+                          "--container-chip-title": tone.chipTitle,
+                          "--container-toggle-fill": tone.toggleFill,
+                          "--container-toggle-stroke": tone.toggleStroke,
                         }}
                       >
                         {focused && (
@@ -2341,15 +2352,15 @@ function App() {
                       ? "url(#arrow-dep)"
                       : "url(#arrow-other)";
                 const backgroundEdge = dimmed && selectedIsVisible && !selectedEdgeId && !hoverNodeId;
-                const baseWidth = edge.kind === "interface" ? 1.4 : edge.kind === "dependency_file" ? 1.15 : 1.25;
-                const weightWidth = Math.min(0.85, edge.count * 0.12);
+                const baseWidth = edge.kind === "interface" ? 1.08 : edge.kind === "dependency_file" ? 0.9 : 0.98;
+                const weightWidth = Math.min(0.52, edge.count * 0.08);
                 const normalStrokeWidth = selectedByEdge
-                  ? baseWidth + 0.95
+                  ? baseWidth + 0.72
                   : selected
-                    ? baseWidth + 0.55
+                    ? baseWidth + 0.42
                     : baseWidth + weightWidth;
                 const strokeWidth = backgroundEdge
-                  ? Math.max(0.65, normalStrokeWidth * 0.82)
+                  ? Math.max(0.54, normalStrokeWidth * 0.8)
                   : normalStrokeWidth;
                 const showDecorations = selectedByEdge || relatedToHover;
                 const showArrow = !backgroundEdge && (selectedByEdge || selected);
@@ -2502,6 +2513,7 @@ function App() {
                   const topGripY = node.y - 22;
                   const bottomGripX = midX - edgeLength / 2;
                   const bottomGripY = node.y + node.height + 12;
+                  const nodeTone = studio.frameToneByLevel(node.level);
                   const nodeClasses = [
                     "node",
                     isFocusedNode ? "active" : "",
@@ -2521,6 +2533,14 @@ function App() {
                         data-owner={ownerContainerByNodeId[node.id] || ""}
                         data-parent={node.parent_id || ""}
                         className={nodeClasses}
+                        style={{
+                          "--node-frame-stroke": nodeTone.nodeFrameStroke,
+                          "--node-frame-fill": nodeTone.nodeFrameFill,
+                          "--node-body-fill": nodeTone.nodeBodyFill,
+                          "--node-body-focus-fill": nodeTone.nodeBodyFocusFill,
+                          "--node-header-fill": nodeTone.nodeHeaderFill,
+                          "--node-header-stroke": nodeTone.nodeHeaderStroke,
+                        }}
                         onClick={(event) => {
                           event.stopPropagation();
                           activateNode(node.id);
@@ -2545,6 +2565,14 @@ function App() {
                           }
                         }}
                       >
+                      <rect
+                        x={node.x - 4}
+                        y={node.y - 4}
+                        width={node.width + 8}
+                        height={node.height + 8}
+                        rx="16"
+                        className="node-frame"
+                      />
                       <rect x={node.x} y={node.y} width={node.width} height={node.height} rx="14" className="node-body" />
                       <rect x={node.x + 1} y={node.y + 1} width={node.width - 2} height="30" rx="12" className="node-header" />
                       <text x={titleX} y={node.y + 26} className="title">{studio.clipByUnits(node.name, node.portTextUnits + 1)}</text>

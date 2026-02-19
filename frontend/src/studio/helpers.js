@@ -1166,6 +1166,50 @@ export function applyManualLayout(layout, manualPositions) {
 export function clampZoom(value) {
   return Math.min(2.8, Math.max(0.35, value));
 }
+export function frameToneByLevel(rawLevel) {
+  const level = Math.max(0, Number(rawLevel) || 0);
+  const ratio = Math.max(0, Math.min(1, level / 9));
+  const eased = Math.pow(ratio, 0.9);
+  const mix = (from, to) => from + (to - from) * ratio;
+  const mixEased = (from, to) => from + (to - from) * eased;
+  const hsl = (h, s, l) => `hsl(${Math.round(h)} ${Math.round(s)}% ${Math.round(l * 10) / 10}%)`;
+
+  const stroke = hsl(mix(210, 214), 38, mixEased(60, 35));
+  const strokeChain = hsl(mix(210, 214), 42, mixEased(56, 32));
+  const strokeFocused = hsl(mix(208, 212), 54, mixEased(52, 29));
+  const fill = hsl(mix(211, 214), 44, mixEased(96.5, 82));
+  const fillFocused = hsl(mix(210, 214), 48, mixEased(94, 79));
+  const chipFill = hsl(mix(210, 214), 50, mixEased(97, 85));
+  const chipStroke = hsl(mix(210, 214), 40, mixEased(69, 45));
+  const chipTitle = hsl(mix(212, 216), 44, mixEased(31, 22));
+  const toggleFill = hsl(mix(210, 214), 52, mixEased(94.5, 81));
+  const toggleStroke = hsl(mix(210, 214), 40, mixEased(60, 38));
+  const nodeFrameStroke = hsl(mix(210, 214), 44, mixEased(56, 34));
+  const nodeFrameFill = hsl(mix(210, 214), 50, mixEased(97, 84));
+  const nodeBodyFill = hsl(mix(44, 42), 36, mixEased(92, 84));
+  const nodeBodyFocusFill = hsl(mix(208, 212), 46, mixEased(95, 84));
+  const nodeHeaderFill = hsl(mix(208, 213), 48, mixEased(85, 72));
+  const nodeHeaderStroke = hsl(mix(209, 213), 38, mixEased(68, 46));
+
+  return {
+    stroke,
+    strokeChain,
+    strokeFocused,
+    fill,
+    fillFocused,
+    chipFill,
+    chipStroke,
+    chipTitle,
+    toggleFill,
+    toggleStroke,
+    nodeFrameStroke,
+    nodeFrameFill,
+    nodeBodyFill,
+    nodeBodyFocusFill,
+    nodeHeaderFill,
+    nodeHeaderStroke,
+  };
+}
 export function distributeOnSpan(min, max, index, count) {
   if (count <= 1) {
     return (min + max) / 2;
