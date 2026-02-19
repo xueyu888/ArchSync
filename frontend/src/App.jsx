@@ -518,198 +518,6 @@ function App() {
   }, [focusedModuleId, moduleById, containerById]);
   const activeContainerId = activeContainerChain.length ? activeContainerChain[activeContainerChain.length - 1] : "";
   const activeContainerIdSet = useMemo(() => new Set(activeContainerChain), [activeContainerChain]);
-  const containerBoundaryPortsById = useMemo(() => {
-    const containers = renderLayout.moduleContainers || [];
-    if (!containers.length) {
-      return {};
-    }
-    const containerByIdLocal = Object.fromEntries(containers.map((item) => [item.id, item]));
-    const samplesByKey = {};
-    const add = (containerId, side, y, weight) => {
-      if (!containerId || !side || !Number.isFinite(y) || !Number.isFinite(weight) || weight <= 0) {
-        return;
-      }
-      const key = `${containerId}|${side}`;
-      if (!samplesByKey[key]) {
-        samplesByKey[key] = [];
-      }
-      samplesByKey[key].push({ y, weight });
-    };
-    const crosses = (containerId, otherNodeId) => {
-      if (!containerId) return false;
-      const descendants = descendantsByModule?.[containerId];
-      if (!descendants || typeof descendants.has !== "function") return true;
-      return !descendants.has(otherNodeId);
-    };
-
-    for (const edge of visibleEdges || []) {
-      const geometry = edgeGeometryById[edge.id];
-      if (!geometry) {
-        continue;
-      }
-      const weight = Math.max(1, Number(edge.count) || 1);
-      const srcOwner = ownerContainerByNodeId[edge.src_id] || "";
-      const dstOwner = ownerContainerByNodeId[edge.dst_id] || "";
-      if (srcOwner && crosses(srcOwner, edge.dst_id)) {
-        const container = containerByIdLocal[srcOwner];
-        const srcNode = drawNodeById[edge.src_id];
-        const dstNode = drawNodeById[edge.dst_id];
-        if (container && srcNode && dstNode) {
-          const containerCenterX = container.x + container.width / 2;
-          const otherCenterX = dstNode.x + dstNode.width / 2;
-          const side = otherCenterX >= containerCenterX ? "right" : "left";
-          add(srcOwner, side, geometry.startY, weight);
-        }
-      }
-      if (dstOwner && crosses(dstOwner, edge.src_id)) {
-        const container = containerByIdLocal[dstOwner];
-        const srcNode = drawNodeById[edge.src_id];
-        const dstNode = drawNodeById[edge.dst_id];
-        if (container && srcNode && dstNode) {
-          const containerCenterX = container.x + container.width / 2;
-          const otherCenterX = srcNode.x + srcNode.width / 2;
-          const side = otherCenterX >= containerCenterX ? "right" : "left";
-          add(dstOwner, side, geometry.endY, weight);
-        }
-      }
-    }
-
-    const output = {};
-    const CLUSTER_GAP = 26;
-    const MIN_PORT_GAP = 16;
-    const MAX_PORTS_PER_SIDE = 6;
-    const finalizePorts = (container, ports) => {
-      if (!ports.length) return [];
-      const minY = container.y + 18;
-      const maxY = container.y + container.height - 18;
-      const clamped = ports
-        .map((item) => ({
-          ...item,
-          y: Math.min(maxY, Math.max(minY, item.y)),
-        }))
-        .sort((a, b) => a.y - b.y);
-      // Enforce readable spacing while keeping ports near their source.
-      for (let i = 1; i < clamped.length; i += 1) {
-        if (clamped[i].y - clamped[i - 1].y < MIN_PORT_GAP) {
-          clamped[i].y = clamped[i - 1].y + MIN_PORT_GAP;
-        }
-      }
-      const overflow = clamped[clamped.length - 1].y - maxY;
-      if (overflow > 0) {
-        for (const port of clamped) port.y -= overflow;
-      }
-      const underflow = minY - clamped[0].y;
-      if (underflow > 0) {
-        for (const port of clamped) port.y += underflow;
-      }
-      return clamped;
-    };
-
-    for (const [key, samples] of Object.entries(samplesByKey)) {
-      const [containerId, side] = String(key).split("|");
-      const container = containerByIdLocal[containerId];
-      if (!container || !samples?.length) {
-        continue;
-      }
-
-      const sorted = [...samples].sort((a, b) => a.y - b.y);
-      const clusters = [];
-      let current = null;
-      const flush = () => {
-        if (!current || !current.count) return;
-        clusters.push({
-          count: current.count,
-          y: current.weightedY / current.count,
-        });
-      };
-      for (const sample of sorted) {
-        if (!current) {
-          current = { count: sample.weight, weightedY: sample.y * sample.weight };
-          continue;
-        }
-        const mean = current.weightedY / Math.max(1e-6, current.count);
-        if (Math.abs(sample.y - mean) <= CLUSTER_GAP) {
-          current.count += sample.weight;
-          current.weightedY += sample.y * sample.weight;
-        } else {
-          flush();
-          current = { count: sample.weight, weightedY: sample.y * sample.weight };
-        }
-      }
-      flush();
-
-      let ports = clusters;
-      if (ports.length > MAX_PORTS_PER_SIDE) {
-        const strongest = [...ports].sort((a, b) => b.count - a.count).slice(0, MAX_PORTS_PER_SIDE);
-        ports = strongest.sort((a, b) => a.y - b.y);
-      }
-
-      const finalized = finalizePorts(container, ports);
-      if (!output[containerId]) {
-        output[containerId] = { left: [], right: [] };
-      }
-      output[containerId][side] = finalized;
-    }
-    return output;
-  }, [renderLayout.moduleContainers, visibleEdges, edgeGeometryById, ownerContainerByNodeId, drawNodeById, descendantsByModule]);
-  const containerInterfaceById = useMemo(() => {
-    const containers = renderLayout.moduleContainers || [];
-    if (!containers.length) {
-      return {};
-    }
-    const containerIdSet = new Set(containers.map((item) => item.id));
-    const summaryById = {};
-    for (const container of containers) {
-      summaryById[container.id] = {
-        inCount: 0,
-        outCount: 0,
-        inWeightedY: 0,
-        outWeightedY: 0,
-      };
-    }
-    for (const node of renderLayout.nodes || []) {
-      const inCount = Math.max(0, Number(node.outerInEdgeCount || node.outerInParentCount || 0));
-      const outCount = Math.max(0, Number(node.outerOutEdgeCount || node.outerOutParentCount || 0));
-      if (!inCount && !outCount) {
-        continue;
-      }
-      const nodeCenterY = node.y + node.height / 2;
-      for (const ancestor of studio.lineage(node.id, moduleById)) {
-        if (!containerIdSet.has(ancestor.id)) {
-          continue;
-        }
-        const summary = summaryById[ancestor.id];
-        if (!summary) {
-          continue;
-        }
-        if (inCount) {
-          summary.inCount += inCount;
-          summary.inWeightedY += nodeCenterY * inCount;
-        }
-        if (outCount) {
-          summary.outCount += outCount;
-          summary.outWeightedY += nodeCenterY * outCount;
-        }
-      }
-    }
-    const output = {};
-    for (const container of containers) {
-      const summary = summaryById[container.id];
-      if (!summary || (!summary.inCount && !summary.outCount)) {
-        continue;
-      }
-      const minY = container.y + 18;
-      const maxY = container.y + container.height - 18;
-      const clampY = (value) => Math.min(maxY, Math.max(minY, value));
-      output[container.id] = {
-        inCount: summary.inCount,
-        outCount: summary.outCount,
-        inY: summary.inCount ? clampY(summary.inWeightedY / summary.inCount) : null,
-        outY: summary.outCount ? clampY(summary.outWeightedY / summary.outCount) : null,
-      };
-    }
-    return output;
-  }, [renderLayout.moduleContainers, renderLayout.nodes, moduleById]);
   const availableLevels = useMemo(() => {
     return Array.from(
       new Set((effectiveModules || []).filter((item) => item.level > 0).map((item) => item.level)),
@@ -2532,27 +2340,54 @@ function App() {
                     : edge.kind === "dependency"
                       ? "url(#arrow-dep)"
                       : "url(#arrow-other)";
-                const baseWidth = edge.kind === "interface" ? 2.3 : edge.kind === "dependency_file" ? 2 : 2.1;
-                const weightWidth = Math.min(1.8, edge.count * 0.22);
-                const dashArray = edge.kind === "dependency_file"
-                  ? "9 5"
-                  : edge.kind === "other"
-                    ? "3 5"
-                    : undefined;
                 const backgroundEdge = dimmed && selectedIsVisible && !selectedEdgeId && !hoverNodeId;
+                const baseWidth = edge.kind === "interface" ? 1.4 : edge.kind === "dependency_file" ? 1.15 : 1.25;
+                const weightWidth = Math.min(0.85, edge.count * 0.12);
                 const normalStrokeWidth = selectedByEdge
-                  ? baseWidth + 2.3
+                  ? baseWidth + 0.95
                   : selected
-                    ? baseWidth + 1.4
+                    ? baseWidth + 0.55
                     : baseWidth + weightWidth;
                 const strokeWidth = backgroundEdge
-                  ? Math.max(0.9, normalStrokeWidth * 0.58)
+                  ? Math.max(0.65, normalStrokeWidth * 0.82)
                   : normalStrokeWidth;
-                const showDecorations = !backgroundEdge || selectedByEdge || relatedToHover;
-                const sourceTerminalX = geometry.sourceSide === "right" ? geometry.startX + 1 : geometry.startX - 9;
-                const targetTerminalX = geometry.targetSide === "right" ? geometry.endX + 1 : geometry.endX - 9;
-                const sourceTerminalY = geometry.startY - 4;
-                const targetTerminalY = geometry.endY - 4;
+                const showDecorations = selectedByEdge || relatedToHover;
+                const showArrow = !backgroundEdge && (selectedByEdge || selected);
+
+                const borderConnectors = [];
+                const maybeAddBorderConnector = (containerId, otherNodeId, side, y) => {
+                  if (!containerId || !otherNodeId) return;
+                  const container = containerById[containerId];
+                  if (!container) return;
+                  const descendants = descendantsByModule?.[containerId];
+                  // When unsure, assume it crosses so we draw a visible junction.
+                  const crosses = (!descendants || typeof descendants.has !== "function")
+                    ? true
+                    : !descendants.has(otherNodeId);
+                  if (!crosses) return;
+
+                  const xBase = Number(container.x) || 0;
+                  const yBase = Number(container.y) || 0;
+                  const width = Number(container.width) || 0;
+                  const height = Number(container.height) || 0;
+                  if (!(width > 0 && height > 0)) return;
+
+                  const x = side === "right" ? xBase + width : xBase;
+                  const yRaw = Number(y) || 0;
+                  const yMin = yBase + 18;
+                  const yMax = yBase + height - 18;
+                  const yClamped = Math.min(yMax, Math.max(yMin, yRaw));
+                  borderConnectors.push({ x, y: yClamped });
+                };
+
+                const srcOwner = ownerContainerByNodeId[edge.src_id] || "";
+                if (srcOwner) {
+                  maybeAddBorderConnector(srcOwner, edge.dst_id, geometry.sourceSide, geometry.startY);
+                }
+                const dstOwner = ownerContainerByNodeId[edge.dst_id] || "";
+                if (dstOwner) {
+                  maybeAddBorderConnector(dstOwner, edge.src_id, geometry.targetSide, geometry.endY);
+                }
                     return (
                       <g
                         key={edge.id}
@@ -2569,59 +2404,37 @@ function App() {
                       d={geometry.path}
                       className="edge-hitbox"
                     />
-                    {edge.kind === "interface" && showDecorations && (
-                      <path
-                        d={geometry.path}
-                        className={`edge edge-interface-shell ${selected ? "selected" : ""} ${dimmed ? "dimmed" : ""}`}
-                        style={{ strokeWidth: selectedByEdge ? 8 : selected ? 7 : 6.4 }}
+                    {!!borderConnectors.length && borderConnectors.map((item, index) => (
+                      <circle
+                        key={`${edge.id}-border-${index}`}
+                        cx={item.x}
+                        cy={item.y}
+                        r={selectedByEdge ? 3.6 : selected ? 3.2 : 2.8}
+                        className={`edge-border-connector edge-border-connector-${edgeKindClass} ${selected ? "selected" : ""} ${dimmed ? "dimmed" : ""}`}
                       />
-                    )}
+                    ))}
                     <path
                       d={geometry.path}
                       className={cls.join(" ")}
-                      markerEnd={backgroundEdge ? undefined : marker}
+                      markerEnd={showArrow ? marker : undefined}
                       style={{
-                        strokeDasharray: dashArray,
                         strokeWidth,
                       }}
                     />
-                    {edge.kind === "interface" ? (
+                    {showDecorations && (
                       <>
-                        {showDecorations && (
-                          <>
-                            <g className={`edge-terminal interface ${selected ? "selected" : ""} ${dimmed ? "dimmed" : ""}`}>
-                              <rect x={sourceTerminalX} y={sourceTerminalY} width="8" height="8" rx="1.4" className="terminal-body" />
-                              <line x1={sourceTerminalX + 2} y1={sourceTerminalY + 1.3} x2={sourceTerminalX + 2} y2={sourceTerminalY + 6.7} className="terminal-bar" />
-                              <line x1={sourceTerminalX + 4} y1={sourceTerminalY + 1.3} x2={sourceTerminalX + 4} y2={sourceTerminalY + 6.7} className="terminal-bar" />
-                              <line x1={sourceTerminalX + 6} y1={sourceTerminalY + 1.3} x2={sourceTerminalX + 6} y2={sourceTerminalY + 6.7} className="terminal-bar" />
-                            </g>
-                            <g className={`edge-terminal interface ${selected ? "selected" : ""} ${dimmed ? "dimmed" : ""}`}>
-                              <rect x={targetTerminalX} y={targetTerminalY} width="8" height="8" rx="1.4" className="terminal-body" />
-                              <line x1={targetTerminalX + 2} y1={targetTerminalY + 1.3} x2={targetTerminalX + 2} y2={targetTerminalY + 6.7} className="terminal-bar" />
-                              <line x1={targetTerminalX + 4} y1={targetTerminalY + 1.3} x2={targetTerminalX + 4} y2={targetTerminalY + 6.7} className="terminal-bar" />
-                              <line x1={targetTerminalX + 6} y1={targetTerminalY + 1.3} x2={targetTerminalX + 6} y2={targetTerminalY + 6.7} className="terminal-bar" />
-                            </g>
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {showDecorations && (
-                          <>
-                            <circle
-                              cx={geometry.startX}
-                              cy={geometry.startY}
-                              r={selectedByEdge ? 3.8 : 3}
-                              className={`edge-endpoint edge-endpoint-${edgeKindClass} ${selected ? "selected" : ""}`}
-                            />
-                            <circle
-                              cx={geometry.endX}
-                              cy={geometry.endY}
-                              r={selectedByEdge ? 3.8 : 3}
-                              className={`edge-endpoint edge-endpoint-${edgeKindClass} ${selected ? "selected" : ""}`}
-                            />
-                          </>
-                        )}
+                        <circle
+                          cx={geometry.startX}
+                          cy={geometry.startY}
+                          r={selectedByEdge ? 3.4 : 2.9}
+                          className={`edge-endpoint edge-endpoint-${edgeKindClass} ${selected ? "selected" : ""}`}
+                        />
+                        <circle
+                          cx={geometry.endX}
+                          cy={geometry.endY}
+                          r={selectedByEdge ? 3.4 : 2.9}
+                          className={`edge-endpoint edge-endpoint-${edgeKindClass} ${selected ? "selected" : ""}`}
+                        />
                       </>
                     )}
                     {showLabel && (
@@ -3334,106 +3147,6 @@ function App() {
                             className="frame-resize-grip"
                           />
                         </g>
-                      </g>
-                    );
-                  })}
-                  {(renderLayout.moduleContainers || []).map((container) => {
-                    if (String(container.id || "").startsWith("layer:") || String(container.id || "").startsWith("system:")) {
-                      return null;
-                    }
-                    const boundary = containerBoundaryPortsById[container.id];
-                    const iface = containerInterfaceById[container.id];
-                    if (!iface && !boundary) {
-                      return null;
-                    }
-                    const xLeft = container.x;
-                    const xRight = container.x + container.width;
-                    const isInterfaceFocused = activeContainerIdSet.has(container.id);
-                    return (
-                      <g
-                        key={`container-interface-${container.id}`}
-                        data-id={container.id}
-                        className={`container-interface-layer ${isInterfaceFocused ? "focused" : ""}`}
-                        pointerEvents="none"
-                      >
-                        {(boundary?.left || []).map((port, idx) => {
-                          if (!port?.count || !Number.isFinite(port.y)) return null;
-                          const y = port.y;
-                          return (
-                            <g key={`boundary-left-${container.id}-${idx}`} className="container-interface boundary in">
-                              <rect
-                                x={xLeft - 9}
-                                y={y - 7}
-                                width="18"
-                                height="14"
-                                rx="7"
-                                className="container-interface-pad in"
-                              />
-                              <line
-                                x1={xLeft - 16}
-                                y1={y}
-                                x2={xLeft + 16}
-                                y2={y}
-                                className="container-interface-stem in"
-                              />
-                              <circle cx={xLeft} cy={y} r="4.6" className="container-interface-dot in" />
-                            </g>
-                          );
-                        })}
-                        {(boundary?.right || []).map((port, idx) => {
-                          if (!port?.count || !Number.isFinite(port.y)) return null;
-                          const y = port.y;
-                          return (
-                            <g key={`boundary-right-${container.id}-${idx}`} className="container-interface boundary out">
-                              <rect
-                                x={xRight - 9}
-                                y={y - 7}
-                                width="18"
-                                height="14"
-                                rx="7"
-                                className="container-interface-pad out"
-                              />
-                              <line
-                                x1={xRight - 16}
-                                y1={y}
-                                x2={xRight + 16}
-                                y2={y}
-                                className="container-interface-stem out"
-                              />
-                              <circle cx={xRight} cy={y} r="4.6" className="container-interface-dot out" />
-                            </g>
-                          );
-                        })}
-                        {iface?.inCount > 0 && Number.isFinite(iface.inY) && (
-                          <g className="container-interface in">
-                            <line
-                              x1={xLeft - 12}
-                              y1={iface.inY}
-                              x2={xLeft + 8}
-                              y2={iface.inY}
-                              className="container-interface-stem in"
-                            />
-                            <circle cx={xLeft} cy={iface.inY} r="4.2" className="container-interface-dot in" />
-                            <text x={xLeft - 15} y={iface.inY - 6} textAnchor="end" className="container-interface-label in">
-                              IN {iface.inCount}
-                            </text>
-                          </g>
-                        )}
-                        {iface?.outCount > 0 && Number.isFinite(iface.outY) && (
-                          <g className="container-interface out">
-                            <line
-                              x1={xRight - 8}
-                              y1={iface.outY}
-                              x2={xRight + 12}
-                              y2={iface.outY}
-                              className="container-interface-stem out"
-                            />
-                            <circle cx={xRight} cy={iface.outY} r="4.2" className="container-interface-dot out" />
-                            <text x={xRight + 15} y={iface.outY - 6} className="container-interface-label out">
-                              OUT {iface.outCount}
-                            </text>
-                          </g>
-                        )}
                       </g>
                     );
                   })}

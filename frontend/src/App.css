@@ -369,7 +369,7 @@ button.active-focus-toggle {
   font-size: 11px;
   color: var(--muted);
   font-weight: 700;
-  border: 1px dashed #8ea3ba;
+  border: 1px solid #8ea3ba;
   border-radius: 999px;
   padding: 3px 8px;
   background: #f8fbff;
@@ -805,7 +805,7 @@ button.active-focus-toggle {
   margin: 8px 0 0;
   font-size: 12px;
   color: var(--ink);
-  border: 1px dashed var(--line);
+  border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   padding: 6px 8px;
@@ -853,7 +853,7 @@ button.active-focus-toggle {
   fill: #f2f5fb;
   fill-opacity: 0.8;
   stroke: #aac0d7;
-  stroke-dasharray: 5 4;
+  stroke-dasharray: none;
   stroke-width: 1.2;
 }
 
@@ -983,77 +983,6 @@ button.active-focus-toggle {
   pointer-events: none;
 }
 
-.container-interface-layer {
-  pointer-events: none;
-}
-
-.container-interface-pad {
-  /* Opaque pad to "notch" the container border and avoid any visual occlusion. */
-  fill: #f9fcff;
-  stroke-width: 1.55;
-}
-
-.container-interface-stem {
-  stroke-width: 2.1;
-  stroke-linecap: round;
-}
-
-.container-interface-dot {
-  stroke-width: 1.55;
-}
-
-.container-interface-label {
-  font-size: 9px;
-  font-weight: 800;
-  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
-  letter-spacing: 0.02em;
-}
-
-.container-interface.in .container-interface-stem,
-.container-interface.in .container-interface-dot {
-  stroke: #2f6fa5;
-}
-
-.container-interface.in .container-interface-pad {
-  stroke: #2f6fa5;
-}
-
-.container-interface.in .container-interface-dot {
-  fill: #deedf9;
-}
-
-.container-interface.in .container-interface-label {
-  fill: #2b5f8c;
-}
-
-.container-interface.out .container-interface-stem,
-.container-interface.out .container-interface-dot {
-  stroke: #8a5d26;
-}
-
-.container-interface.out .container-interface-pad {
-  stroke: #8a5d26;
-}
-
-.container-interface.out .container-interface-dot {
-  fill: #f7e6d4;
-}
-
-.container-interface.out .container-interface-label {
-  fill: #855824;
-}
-
-.container-interface-layer.focused .container-interface-dot {
-  stroke-width: 1.9;
-  filter:
-    drop-shadow(0 0 6px rgba(52, 109, 161, 0.35))
-    drop-shadow(0 0 10px rgba(55, 122, 178, 0.22));
-}
-
-.container-interface-layer.focused .container-interface-pad {
-  filter: drop-shadow(0 2px 8px rgba(37, 92, 140, 0.18));
-}
-
 .hierarchy-rail {
   pointer-events: none;
 }
@@ -1111,10 +1040,10 @@ button.active-focus-toggle {
 
 .edge {
   fill: none;
-  opacity: 0.84;
+  opacity: 0.7;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: opacity 120ms ease, stroke-width 120ms ease, filter 120ms ease;
+  transition: none;
 }
 
 .edge-group {
@@ -1129,8 +1058,8 @@ button.active-focus-toggle {
 }
 
 .edge.selected {
-  opacity: 1;
-  filter: drop-shadow(0 0 2px rgba(34, 67, 98, 0.24));
+  opacity: 0.96;
+  filter: none;
 }
 
 .edge.dimmed {
@@ -1141,13 +1070,9 @@ button.active-focus-toggle {
   stroke: var(--dep);
 }
 
-.edge-interface-shell {
-  stroke: rgba(94, 137, 179, 0.4);
-}
-
 .edge-interface {
   stroke: #2f6fa5;
-  filter: drop-shadow(0 0 1px rgba(42, 106, 158, 0.35));
+  filter: none;
 }
 
 .edge-dependency_file {
@@ -1155,6 +1080,37 @@ button.active-focus-toggle {
 }
 
 .edge-other {
+  stroke: var(--other);
+}
+
+.edge-border-connector {
+  pointer-events: none;
+  fill: var(--panel);
+  stroke-width: 1.1;
+  opacity: 0.9;
+}
+
+.edge-border-connector.selected {
+  opacity: 1;
+}
+
+.edge-border-connector.dimmed {
+  opacity: 0.18;
+}
+
+.edge-border-connector-dependency {
+  stroke: var(--dep);
+}
+
+.edge-border-connector-interface {
+  stroke: var(--intf);
+}
+
+.edge-border-connector-dependency_file {
+  stroke: var(--dep-file);
+}
+
+.edge-border-connector-other {
   stroke: var(--other);
 }
 
@@ -1207,30 +1163,6 @@ button.active-focus-toggle {
 .edge-endpoint-other {
   fill: #6a7280;
   stroke: #4d5562;
-}
-
-.edge-terminal {
-  pointer-events: none;
-}
-
-.edge-terminal .terminal-body {
-  fill: #d8e9f7;
-  stroke: #2f6fa5;
-  stroke-width: 1.2;
-}
-
-.edge-terminal .terminal-bar {
-  stroke: #2f6fa5;
-  stroke-width: 1;
-}
-
-.edge-terminal.selected .terminal-body {
-  fill: #c7e3fa;
-  stroke-width: 1.6;
-}
-
-.edge-terminal.dimmed {
-  opacity: 0.2;
 }
 
 .no-edge-note {
