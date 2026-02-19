@@ -1054,17 +1054,24 @@ button.active-focus-toggle {
 .edge-hitbox {
   fill: none;
   stroke: rgba(0, 0, 0, 0);
-  stroke-width: 14px;
+  stroke-width: 24px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   pointer-events: stroke;
 }
 
 .edge.selected {
+  opacity: 1;
+  filter: drop-shadow(0 0 6px rgba(46, 112, 166, 0.42));
+}
+
+.edge.emphasized {
   opacity: 0.96;
-  filter: none;
+  filter: drop-shadow(0 0 4px rgba(58, 122, 174, 0.32));
 }
 
 .edge.dimmed {
-  opacity: 0.12;
+  opacity: 0.1;
 }
 
 .edge-dependency {

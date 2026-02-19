@@ -615,32 +615,6 @@ function expandLanesToContain(lanes, moduleContainers) {
   });
 }
 
-function packLanesHorizontally(lanes, orderedLayers, laneGap, startX) {
-  const laneByLayer = new Map((lanes || []).map((lane) => [lane.layer, lane]));
-  const order = (orderedLayers || []).filter((layer) => laneByLayer.has(layer));
-  if (!order.length) {
-    return { lanes: lanes || [], shiftByLayer: {} };
-  }
-  const minX = Math.min(...Array.from(laneByLayer.values()).map((lane) => lane.x));
-  let cursorX = Number.isFinite(startX) ? startX : minX;
-  const packed = [];
-  const shiftByLayer = {};
-  for (const layer of order) {
-    const lane = laneByLayer.get(layer);
-    const shiftX = cursorX - lane.x;
-    shiftByLayer[layer] = shiftX;
-    packed.push({ ...lane, x: cursorX });
-    cursorX += lane.width + laneGap;
-  }
-  // Preserve any lanes not in the computed order (should be rare).
-  for (const lane of lanes || []) {
-    if (shiftByLayer[lane.layer] === undefined) {
-      packed.push(lane);
-      shiftByLayer[lane.layer] = 0;
-    }
-  }
-  return { lanes: packed, shiftByLayer };
-}
 export function layoutGraph(
   nodes,
   edges,
@@ -1102,8 +1076,8 @@ export function applyManualLayout(layout, manualPositions) {
     const manualHeight = Number(manual.height);
     const minWidth = Number(node.minWidth || node.width) || 0;
     const minHeight = Number(node.minHeight || node.height) || 0;
-    const nextX = Number.isFinite(manualX) ? manualX : node.x;
-    const nextY = Number.isFinite(manualY) ? manualY : node.y;
+    const nextX = Number.isFinite(manualX) ? Math.max(8, manualX) : node.x;
+    const nextY = Number.isFinite(manualY) ? Math.max(8, manualY) : node.y;
     const nextWidth = Number.isFinite(manualWidth) ? Math.max(minWidth, manualWidth) : node.width;
     const nextHeight = Number.isFinite(manualHeight) ? Math.max(minHeight, manualHeight) : node.height;
     return {
@@ -1127,16 +1101,16 @@ export function applyManualLayout(layout, manualPositions) {
     if (!members.length) {
       return lane;
     }
-    const minX = Math.min(...members.map((node) => node.x)) - 30;
     const maxX = Math.max(...members.map((node) => node.x + node.width)) + 30;
-    const minY = Math.min(...members.map((node) => node.y)) - 50;
     const maxY = Math.max(...members.map((node) => node.y + node.height)) + 26;
     return {
       ...lane,
-      x: Math.min(lane.x, minX),
-      y: Math.min(lane.y, minY),
-      width: Math.max(lane.width, maxX - Math.min(lane.x, minX)),
-      height: Math.max(lane.height, maxY - Math.min(lane.y, minY)),
+      // Keep lane origins stable during manual edits. Expanding only width/height avoids
+      // global "jumping" while dragging/resizing (Vivado-like direct manipulation).
+      x: lane.x,
+      y: lane.y,
+      width: Math.max(lane.width, maxX - lane.x),
+      height: Math.max(lane.height, maxY - lane.y),
     };
   });
   const nodeById = Object.fromEntries(nodes.map((item) => [item.id, item]));
@@ -1144,21 +1118,12 @@ export function applyManualLayout(layout, manualPositions) {
     sizeOverridesById: manualPositions,
   });
   const expandedLanes = expandLanesToContain(lanes, moduleContainers);
-  const orderedLayers = (layout.lanes || []).map((lane) => lane.layer);
-  const packed = packLanesHorizontally(expandedLanes, orderedLayers, 96, Math.min(...expandedLanes.map((lane) => lane.x)));
-  const shiftByLayer = packed.shiftByLayer || {};
-  const shiftedNodes = nodes.map((node) => ({ ...node, x: node.x + (shiftByLayer[node.layer] || 0) }));
-  const shiftedNodeById = Object.fromEntries(shiftedNodes.map((item) => [item.id, item]));
-  const shiftedContainers = materializeExpandedContainers(layout.containerDefs || [], shiftedNodeById, {
-    sizeOverridesById: manualPositions,
-  });
-  const normalized = normalizeToPositive(shiftedNodes, packed.lanes, shiftedContainers, 8);
-  const sized = boundsWithPadding(layout, normalized.nodes, normalized.lanes, normalized.moduleContainers);
+  const sized = boundsWithPadding(layout, nodes, expandedLanes, moduleContainers);
   return {
     ...layout,
-    nodes: normalized.nodes,
-    lanes: normalized.lanes,
-    moduleContainers: normalized.moduleContainers,
+    nodes,
+    lanes: expandedLanes,
+    moduleContainers,
     width: sized.width,
     height: sized.height,
   };

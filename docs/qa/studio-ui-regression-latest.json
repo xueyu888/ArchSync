@@ -1,6 +1,6 @@
 {
   "studioUrl": "http://127.0.0.1:5173/",
-  "startedAt": "2026-02-19T15:36:00.846Z",
+  "startedAt": "2026-02-19T16:24:33.797Z",
   "screenshots": {
     "overview": "docs/qa/studio-ui-regression-latest-overview.png",
     "hierarchy": "docs/qa/studio-ui-regression-latest-hierarchy.png",
@@ -20,7 +20,7 @@
     "dimmedEdges": 0,
     "edgeNodeIntersectionCount": 0,
     "edgeNodeIntersections": [],
-    "edgeLabelCount": 0,
+    "edgeLabelCount": 2,
     "edgeLabelOverlapPairs": [],
     "edgeLabelNodeOverlapPairs": [],
     "edgeLabelHeaderOverlapPairs": []
@@ -35,9 +35,9 @@
       "height": 134
     },
     "after": {
-      "x": 60,
+      "x": 48,
       "y": 72,
-      "width": 468,
+      "width": 420,
       "height": 264
     }
   },
@@ -63,16 +63,16 @@
   "container_resize_smoke": {
     "id": "system:ArchSync System",
     "before": {
-      "x": 8,
+      "x": -4,
       "y": 18,
-      "width": 1916,
+      "width": 1340,
       "height": 468
     },
     "after": {
-      "x": 8,
+      "x": -4,
       "y": 8,
-      "width": 2020,
-      "height": 556
+      "width": 1396,
+      "height": 544
     }
   },
   "container_resize_smoke_metrics": {
@@ -99,19 +99,19 @@
       "node": {
         "parentId": "system:ArchSync System",
         "entry": {
-          "x": 60,
+          "x": 48,
           "y": 72,
-          "width": 468,
+          "width": 420,
           "height": 264
         }
       },
       "container": {
         "parentId": "system:ArchSync System",
         "entry": {
-          "x": 8,
+          "x": -4,
           "y": 8,
-          "width": 2020,
-          "height": 556
+          "width": 1396,
+          "height": 544
         }
       }
     },
@@ -119,19 +119,19 @@
       "node": {
         "parentId": "system:ArchSync System",
         "entry": {
-          "x": 60,
+          "x": 48,
           "y": 72,
-          "width": 468,
+          "width": 420,
           "height": 264
         }
       },
       "container": {
         "parentId": "system:ArchSync System",
         "entry": {
-          "x": 8,
+          "x": -4,
           "y": 8,
-          "width": 2020,
-          "height": 556
+          "width": 1396,
+          "height": 544
         }
       }
     }
@@ -140,19 +140,19 @@
     "node": {
       "id": "c2291ca3f69cace0",
       "afterReload": {
-        "x": 60,
+        "x": 48,
         "y": 72,
-        "width": 468,
+        "width": 420,
         "height": 264
       }
     },
     "container": {
       "id": "system:ArchSync System",
       "afterReload": {
-        "x": 8,
+        "x": -4,
         "y": 8,
-        "width": 2020,
-        "height": 556
+        "width": 1396,
+        "height": 544
       }
     }
   },
@@ -180,11 +180,11 @@
     "edgeLabelNodeOverlapPairs": [],
     "edgeLabelHeaderOverlapPairs": []
   },
-  "finishedAt": "2026-02-19T15:36:28.750Z",
-  "sourceReport": "docs/qa/studio-ui-regression-2026-02-19T15-36-00-782Z.json",
+  "finishedAt": "2026-02-19T16:25:01.045Z",
+  "sourceReport": "docs/qa/studio-ui-regression-2026-02-19T16-24-33-736Z.json",
   "sourceScreenshots": {
-    "overview": "docs/qa/studio-ui-regression-2026-02-19T15-36-00-782Z-overview.png",
-    "hierarchy": "docs/qa/studio-ui-regression-2026-02-19T15-36-00-782Z-hierarchy.png",
-    "stress": "docs/qa/studio-ui-regression-2026-02-19T15-36-00-782Z-stress.png"
+    "overview": "docs/qa/studio-ui-regression-2026-02-19T16-24-33-736Z-overview.png",
+    "hierarchy": "docs/qa/studio-ui-regression-2026-02-19T16-24-33-736Z-hierarchy.png",
+    "stress": "docs/qa/studio-ui-regression-2026-02-19T16-24-33-736Z-stress.png"
   }
 }

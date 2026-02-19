@@ -627,6 +627,54 @@ function App() {
     return moduleById[breadcrumbAnchorId].level;
   }, [breadcrumbAnchorId, moduleById]);
   const selectedIsVisible = selectedInCurrentDepth;
+  const selectedIsContainerFrame = useMemo(
+    () => !!(selectedModuleId && containerById[selectedModuleId]),
+    [selectedModuleId, containerById],
+  );
+  const selectedEdgeScopeNodeIds = useMemo(() => {
+    if (!selectedModuleId || !selectedIsVisible) {
+      return null;
+    }
+    const descendants = descendantsByModule[selectedModuleId];
+    if (!descendants || !(descendants instanceof Set)) {
+      return drawNodeById[selectedModuleId] ? new Set([selectedModuleId]) : null;
+    }
+    const visible = new Set();
+    for (const nodeId of descendants) {
+      if (drawNodeById[nodeId]) {
+        visible.add(nodeId);
+      }
+    }
+    if (drawNodeById[selectedModuleId]) {
+      visible.add(selectedModuleId);
+    }
+    return visible.size ? visible : null;
+  }, [selectedModuleId, selectedIsVisible, descendantsByModule, drawNodeById]);
+  const selectedScopeIsSubset = useMemo(() => {
+    if (!selectedEdgeScopeNodeIds || !renderLayout.nodes.length) {
+      return false;
+    }
+    return selectedEdgeScopeNodeIds.size < renderLayout.nodes.length;
+  }, [selectedEdgeScopeNodeIds, renderLayout.nodes]);
+  const canApplySelectionEdgeHighlight = !selectedIsContainerFrame || selectedScopeIsSubset;
+  const isEdgeRelatedToSelection = useCallback((edge) => {
+    if (!selectedModuleId || !selectedIsVisible || !selectedEdgeScopeNodeIds || !canApplySelectionEdgeHighlight) {
+      return false;
+    }
+    const srcInScope = selectedEdgeScopeNodeIds.has(edge.src_id);
+    const dstInScope = selectedEdgeScopeNodeIds.has(edge.dst_id);
+    if (selectedIsContainerFrame) {
+      // For container focus, highlight boundary-crossing links first.
+      return srcInScope !== dstInScope;
+    }
+    return srcInScope || dstInScope;
+  }, [
+    selectedModuleId,
+    selectedIsVisible,
+    selectedEdgeScopeNodeIds,
+    selectedIsContainerFrame,
+    canApplySelectionEdgeHighlight,
+  ]);
   const visibleEdgeRows = useMemo(
     () => visibleEdges.map((edge) => ({
       ...edge,
@@ -739,8 +787,7 @@ function App() {
       if (!geometry) continue;
 
       const selectedByEdge = selectedEdgeId === edge.id;
-      const relatedToSelectedModule = selectedIsVisible
-        && (edge.src_id === selectedModuleId || edge.dst_id === selectedModuleId);
+      const relatedToSelectedModule = isEdgeRelatedToSelection(edge);
       const relatedToHover = !!hoverNodeId
         && (edge.src_id === hoverNodeId || edge.dst_id === hoverNodeId);
       const selected = selectedByEdge
@@ -827,8 +874,7 @@ function App() {
     denseLabelMode,
     edgeGeometryById,
     selectedEdgeId,
-    selectedModuleId,
-    selectedIsVisible,
+    isEdgeRelatedToSelection,
     hoverNodeId,
     renderLayout.height,
     renderLayout.width,
@@ -1202,10 +1248,18 @@ function App() {
       return;
     }
     const positions = {};
+    let boundsMinX = Number.POSITIVE_INFINITY;
+    let boundsMinY = Number.POSITIVE_INFINITY;
+    let boundsMaxX = Number.NEGATIVE_INFINITY;
+    let boundsMaxY = Number.NEGATIVE_INFINITY;
     for (const nodeId of memberIds) {
       const node = drawNodeById[nodeId];
       if (node) {
         positions[nodeId] = { x: node.x, y: node.y };
+        boundsMinX = Math.min(boundsMinX, node.x);
+        boundsMinY = Math.min(boundsMinY, node.y);
+        boundsMaxX = Math.max(boundsMaxX, node.x + node.width);
+        boundsMaxY = Math.max(boundsMaxY, node.y + node.height);
       }
     }
     if (!Object.keys(positions).length) {
@@ -1218,6 +1272,12 @@ function App() {
       startPoint: point,
       startPositions: positions,
       lastPositions: positions,
+      bounds: {
+        minX: boundsMinX,
+        minY: boundsMinY,
+        maxX: boundsMaxX,
+        maxY: boundsMaxY,
+      },
       moved: false,
     };
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -1237,8 +1297,18 @@ function App() {
     if (!point) {
       return;
     }
-    const dx = point.x - drag.startPoint.x;
-    const dy = point.y - drag.startPoint.y;
+    const rawDx = point.x - drag.startPoint.x;
+    const rawDy = point.y - drag.startPoint.y;
+    const minX = 12;
+    const minY = 58;
+    const maxX = Math.max(minX, renderLayout.width - 16);
+    const maxY = Math.max(minY, renderLayout.height - 16);
+    const minDx = minX - (drag.bounds?.minX ?? minX);
+    const maxDx = maxX - (drag.bounds?.maxX ?? maxX);
+    const minDy = minY - (drag.bounds?.minY ?? minY);
+    const maxDy = maxY - (drag.bounds?.maxY ?? maxY);
+    const dx = Math.min(maxDx, Math.max(minDx, rawDx));
+    const dy = Math.min(maxDy, Math.max(minDy, rawDy));
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
       drag.moved = true;
       suppressClickRef.current = true;
@@ -2321,8 +2391,7 @@ function App() {
                   return null;
                 }
                 const selectedByEdge = selectedEdgeId === edge.id;
-                const relatedToSelectedModule = selectedIsVisible
-                  && (edge.src_id === selectedModuleId || edge.dst_id === selectedModuleId);
+                const relatedToSelectedModule = isEdgeRelatedToSelection(edge);
                 const relatedToHover = hoverContext.edgeIds.has(edge.id);
                 const selected = selectedByEdge
                   || (!selectedEdgeId && relatedToSelectedModule)
@@ -2337,12 +2406,15 @@ function App() {
                   dimmed = edge.id !== selectedEdgeId;
                 } else if ((edgeScope === "selected" || activePortFocus) && selectedIsVisible) {
                   dimmed = !relatedToSelectedModule;
+                } else if (selectedModuleId && selectedIsVisible && canApplySelectionEdgeHighlight) {
+                  dimmed = !relatedToSelectedModule;
                 }
                 const edgeKindClass = ["dependency", "interface", "dependency_file"].includes(edge.kind)
                   ? edge.kind
                   : "other";
                 const cls = ["edge", `edge-${edgeKindClass}`];
                 if (selected) cls.push("selected");
+                if (selectedByEdge || (!selectedEdgeId && relatedToSelectedModule)) cls.push("emphasized");
                 if (dimmed) cls.push("dimmed");
                 const marker = edge.kind === "interface"
                   ? "url(#arrow-intf)"
@@ -2399,21 +2471,30 @@ function App() {
                 if (dstOwner) {
                   maybeAddBorderConnector(dstOwner, edge.src_id, geometry.targetSide, geometry.endY);
                 }
+                const selectEdge = (event) => {
+                  if (event.button !== undefined && event.button !== 0) {
+                    return;
+                  }
+                  event.stopPropagation();
+                  setSelectedEdgeId(edge.id);
+                  setSelectedModuleId(edge.src_id);
+                  setFocusedModuleId(edge.src_id);
+                  setActivePortFocus(null);
+                };
                     return (
                       <g
                         key={edge.id}
                         className="edge-group"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelectedEdgeId(edge.id);
-                          setSelectedModuleId(edge.src_id);
-                          setFocusedModuleId(edge.src_id);
-                          setActivePortFocus(null);
-                        }}
+                        onPointerDown={selectEdge}
+                        onMouseDown={selectEdge}
+                        onClick={selectEdge}
                       >
                     <path
                       d={geometry.path}
                       className="edge-hitbox"
+                      onPointerDown={selectEdge}
+                      onMouseDown={selectEdge}
+                      onClick={selectEdge}
                     />
                     {!!borderConnectors.length && borderConnectors.map((item, index) => (
                       <circle
@@ -2428,6 +2509,9 @@ function App() {
                       d={geometry.path}
                       className={cls.join(" ")}
                       markerEnd={showArrow ? marker : undefined}
+                      onPointerDown={selectEdge}
+                      onMouseDown={selectEdge}
+                      onClick={selectEdge}
                       style={{
                         strokeWidth,
                       }}
