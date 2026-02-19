@@ -1,6 +1,6 @@
 {
   "studioUrl": "http://127.0.0.1:5173/",
-  "startedAt": "2026-02-19T16:24:33.797Z",
+  "startedAt": "2026-02-19T16:52:05.296Z",
   "screenshots": {
     "overview": "docs/qa/studio-ui-regression-latest-overview.png",
     "hierarchy": "docs/qa/studio-ui-regression-latest-hierarchy.png",
@@ -20,7 +20,7 @@
     "dimmedEdges": 0,
     "edgeNodeIntersectionCount": 0,
     "edgeNodeIntersections": [],
-    "edgeLabelCount": 2,
+    "edgeLabelCount": 18,
     "edgeLabelOverlapPairs": [],
     "edgeLabelNodeOverlapPairs": [],
     "edgeLabelHeaderOverlapPairs": []
@@ -63,15 +63,15 @@
   "container_resize_smoke": {
     "id": "system:ArchSync System",
     "before": {
-      "x": -4,
+      "x": 8,
       "y": 18,
-      "width": 1340,
+      "width": 1328,
       "height": 468
     },
     "after": {
-      "x": -4,
+      "x": 8,
       "y": 8,
-      "width": 1396,
+      "width": 1384,
       "height": 544
     }
   },
@@ -108,9 +108,9 @@
       "container": {
         "parentId": "system:ArchSync System",
         "entry": {
-          "x": -4,
+          "x": 8,
           "y": 8,
-          "width": 1396,
+          "width": 1384,
           "height": 544
         }
       }
@@ -128,9 +128,9 @@
       "container": {
         "parentId": "system:ArchSync System",
         "entry": {
-          "x": -4,
+          "x": 8,
           "y": 8,
-          "width": 1396,
+          "width": 1384,
           "height": 544
         }
       }
@@ -149,9 +149,9 @@
     "container": {
       "id": "system:ArchSync System",
       "afterReload": {
-        "x": -4,
+        "x": 8,
         "y": 8,
-        "width": 1396,
+        "width": 1384,
         "height": 544
       }
     }
@@ -180,11 +180,11 @@
     "edgeLabelNodeOverlapPairs": [],
     "edgeLabelHeaderOverlapPairs": []
   },
-  "finishedAt": "2026-02-19T16:25:01.045Z",
-  "sourceReport": "docs/qa/studio-ui-regression-2026-02-19T16-24-33-736Z.json",
+  "finishedAt": "2026-02-19T16:52:31.831Z",
+  "sourceReport": "docs/qa/studio-ui-regression-2026-02-19T16-52-05-232Z.json",
   "sourceScreenshots": {
-    "overview": "docs/qa/studio-ui-regression-2026-02-19T16-24-33-736Z-overview.png",
-    "hierarchy": "docs/qa/studio-ui-regression-2026-02-19T16-24-33-736Z-hierarchy.png",
-    "stress": "docs/qa/studio-ui-regression-2026-02-19T16-24-33-736Z-stress.png"
+    "overview": "docs/qa/studio-ui-regression-2026-02-19T16-52-05-232Z-overview.png",
+    "hierarchy": "docs/qa/studio-ui-regression-2026-02-19T16-52-05-232Z-hierarchy.png",
+    "stress": "docs/qa/studio-ui-regression-2026-02-19T16-52-05-232Z-stress.png"
   }
 }

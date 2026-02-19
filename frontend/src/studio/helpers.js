@@ -615,6 +615,84 @@ function expandLanesToContain(lanes, moduleContainers) {
   });
 }
 
+function enforceContainmentByLineage(nodes, moduleContainers, containerDefs = [], minCoord = 8) {
+  if (!nodes?.length || !moduleContainers?.length) {
+    return moduleContainers || [];
+  }
+  const boxesById = Object.fromEntries((moduleContainers || []).map((box) => [box.id, { ...box }]));
+  const parentById = {};
+  for (const node of nodes || []) {
+    if (node?.id) {
+      parentById[node.id] = node.parent_id || "";
+    }
+  }
+  for (const def of containerDefs || []) {
+    if (def?.id && def.parentId) {
+      parentById[def.id] = def.parentId;
+    }
+  }
+  const expandBox = (containerId, rect, margins) => {
+    const box = boxesById[containerId];
+    if (!box || !rect) {
+      return;
+    }
+    const marginTop = Number(margins?.top ?? 0);
+    const marginRight = Number(margins?.right ?? 0);
+    const marginBottom = Number(margins?.bottom ?? 0);
+    const marginLeft = Number(margins?.left ?? 0);
+    const minX = Math.max(minCoord, Math.min(Number(box.x) || 0, rect.x - marginLeft));
+    const minY = Math.max(minCoord, Math.min(Number(box.y) || 0, rect.y - marginTop));
+    const maxX = Math.max((Number(box.x) || 0) + (Number(box.width) || 0), rect.x + rect.width + marginRight);
+    const maxY = Math.max((Number(box.y) || 0) + (Number(box.height) || 0), rect.y + rect.height + marginBottom);
+    const minWidth = Math.max(1, Number(box.minWidth) || 0);
+    const minHeight = Math.max(1, Number(box.minHeight) || 0);
+    box.x = minX;
+    box.y = minY;
+    box.width = Math.max(minWidth, maxX - minX);
+    box.height = Math.max(minHeight, maxY - minY);
+  };
+
+  const nodeMargins = { top: 20, right: 14, bottom: 16, left: 14 };
+  for (const node of nodes || []) {
+    if (!node?.id) continue;
+    const rect = {
+      x: Number(node.x) || 0,
+      y: Number(node.y) || 0,
+      width: Math.max(1, Number(node.width) || 0),
+      height: Math.max(1, Number(node.height) || 0),
+    };
+    let parentId = parentById[node.id] || "";
+    let guard = 0;
+    while (parentId && guard < 96) {
+      expandBox(parentId, rect, nodeMargins);
+      parentId = parentById[parentId] || "";
+      guard += 1;
+    }
+  }
+
+  const childMargins = { top: 24, right: 18, bottom: 18, left: 18 };
+  const descFirst = Object.values(boxesById).sort((a, b) => (Number(b.level) || 0) - (Number(a.level) || 0));
+  for (const child of descFirst) {
+    if (!child?.id) continue;
+    const rect = {
+      x: Number(child.x) || 0,
+      y: Number(child.y) || 0,
+      width: Math.max(1, Number(child.width) || 0),
+      height: Math.max(1, Number(child.height) || 0),
+    };
+    let parentId = parentById[child.id] || "";
+    let guard = 0;
+    while (parentId && guard < 96) {
+      expandBox(parentId, rect, childMargins);
+      parentId = parentById[parentId] || "";
+      guard += 1;
+    }
+  }
+
+  return (moduleContainers || []).map((box) => boxesById[box.id] || box)
+    .sort((a, b) => (a.level || 0) - (b.level || 0) || (b.width * b.height) - (a.width * a.height));
+}
+
 export function layoutGraph(
   nodes,
   edges,
@@ -1040,21 +1118,25 @@ export function layoutGraph(
   const layoutWidthHint = Math.max(640, left + rootPacked.width + 180);
   const layoutHeightHint = Math.max(500, top + rootPacked.height + 140);
   const normalized = normalizeToPositive(drawNodes, lanes, moduleContainers, 8);
+  const constrainedContainers = enforceContainmentByLineage(
+    normalized.nodes,
+    normalized.moduleContainers,
+    containerDefs,
+    8,
+  );
+  const constrainedLanes = expandLanesToContain(normalized.lanes, constrainedContainers);
   const sized = boundsWithPadding(
     { width: layoutWidthHint, height: layoutHeightHint },
     normalized.nodes,
-    normalized.lanes,
-    normalized.moduleContainers,
+    constrainedLanes,
+    constrainedContainers,
   );
-  const sortedContainers = [...normalized.moduleContainers].sort((a, b) => (
-    (a.level || 0) - (b.level || 0) || (b.width * b.height) - (a.width * a.height)
-  ));
   return {
     width: sized.width,
     height: sized.height,
-    lanes: normalized.lanes,
+    lanes: constrainedLanes,
     containerDefs,
-    moduleContainers: sortedContainers,
+    moduleContainers: constrainedContainers,
     nodes: normalized.nodes,
   };
 }
@@ -1076,8 +1158,8 @@ export function applyManualLayout(layout, manualPositions) {
     const manualHeight = Number(manual.height);
     const minWidth = Number(node.minWidth || node.width) || 0;
     const minHeight = Number(node.minHeight || node.height) || 0;
-    const nextX = Number.isFinite(manualX) ? Math.max(8, manualX) : node.x;
-    const nextY = Number.isFinite(manualY) ? Math.max(8, manualY) : node.y;
+    const nextX = Number.isFinite(manualX) ? Math.max(12, manualX) : node.x;
+    const nextY = Number.isFinite(manualY) ? Math.max(58, manualY) : node.y;
     const nextWidth = Number.isFinite(manualWidth) ? Math.max(minWidth, manualWidth) : node.width;
     const nextHeight = Number.isFinite(manualHeight) ? Math.max(minHeight, manualHeight) : node.height;
     return {
@@ -1114,9 +1196,10 @@ export function applyManualLayout(layout, manualPositions) {
     };
   });
   const nodeById = Object.fromEntries(nodes.map((item) => [item.id, item]));
-  const moduleContainers = materializeExpandedContainers(layout.containerDefs || [], nodeById, {
+  const moduleContainersRaw = materializeExpandedContainers(layout.containerDefs || [], nodeById, {
     sizeOverridesById: manualPositions,
   });
+  const moduleContainers = enforceContainmentByLineage(nodes, moduleContainersRaw, layout.containerDefs || [], 8);
   const expandedLanes = expandLanesToContain(lanes, moduleContainers);
   const sized = boundsWithPadding(layout, nodes, expandedLanes, moduleContainers);
   return {
