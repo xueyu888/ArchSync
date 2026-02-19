@@ -58,6 +58,45 @@ function App() {
   const suppressClickRef = useRef(false);
   const hoverContainerClearRef = useRef(null);
 
+  const MANUAL_LAYOUTS_KEY = "archsync.manualLayouts.v1";
+  const MANUAL_LAYOUTS_MAX_PARENTS = 36;
+  const MANUAL_LAYOUTS_MAX_ITEMS_PER_PARENT = 800;
+  function sanitizeManualLayouts(raw) {
+    if (!raw || typeof raw !== "object") {
+      return {};
+    }
+    const out = {};
+    const parentIds = Object.keys(raw).slice(0, MANUAL_LAYOUTS_MAX_PARENTS);
+    for (const parentId of parentIds) {
+      const entries = raw[parentId];
+      if (!entries || typeof entries !== "object") {
+        continue;
+      }
+      const outEntries = {};
+      const moduleIds = Object.keys(entries).slice(0, MANUAL_LAYOUTS_MAX_ITEMS_PER_PARENT);
+      for (const moduleId of moduleIds) {
+        const value = entries[moduleId];
+        if (!value || typeof value !== "object") {
+          continue;
+        }
+        const patch = {};
+        for (const key of ["x", "y", "width", "height"]) {
+          const num = Number(value[key]);
+          if (Number.isFinite(num)) {
+            patch[key] = num;
+          }
+        }
+        if (Object.keys(patch).length) {
+          outEntries[moduleId] = patch;
+        }
+      }
+      if (Object.keys(outEntries).length) {
+        out[parentId] = outEntries;
+      }
+    }
+    return out;
+  }
+
   useEffect(() => () => {
     if (hoverContainerClearRef.current) {
       clearTimeout(hoverContainerClearRef.current);
@@ -190,6 +229,15 @@ function App() {
           setEdgeFilters((old) => ({ ...old, ...parsed }));
         }
       }
+
+      const savedManualLayoutsRaw = window.localStorage.getItem(MANUAL_LAYOUTS_KEY);
+      if (savedManualLayoutsRaw) {
+        const parsed = JSON.parse(savedManualLayoutsRaw);
+        const sanitized = sanitizeManualLayouts(parsed);
+        if (sanitized && typeof sanitized === "object" && Object.keys(sanitized).length) {
+          setManualLayouts(sanitized);
+        }
+      }
     } catch {
       setSidebarHidden(false);
       setPropertiesHidden(true);
@@ -282,6 +330,17 @@ function App() {
       // ignore storage errors
     }
   }, [edgeFilters]);
+  useEffect(() => {
+    try {
+      if (manualLayouts && Object.keys(manualLayouts).length) {
+        window.localStorage.setItem(MANUAL_LAYOUTS_KEY, JSON.stringify(manualLayouts));
+      } else {
+        window.localStorage.removeItem(MANUAL_LAYOUTS_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [manualLayouts]);
   const aroundNodeIds = useMemo(() => {
     if (selectedAroundHops < 0 || !selectedModuleId || !viewGraph.nodes.some((item) => item.id === selectedModuleId)) {
       return null;
@@ -810,10 +869,19 @@ function App() {
     }
 
     const clipLen = denseLabelMode ? 22 : 34;
-    const charWidth = denseLabelMode ? 5.6 : 6.2;
-    const labelHeight = denseLabelMode ? 12 : 14;
+    // Be conservative: slightly over-estimate text bounds so labels won't collide with frames/nodes.
+    const unitPx = denseLabelMode ? 9.6 : 11.0;
+    const labelHeight = denseLabelMode ? 13 : 16;
     const tryStep = labelHeight;
-    const tryOffsets = [0, tryStep, -tryStep, tryStep * 2, -tryStep * 2, tryStep * 3, -tryStep * 3];
+    const dyOffsets = [0];
+    for (let step = 1; step <= 12; step += 1) {
+      dyOffsets.push(tryStep * step, -tryStep * step);
+    }
+    const dxStep = denseLabelMode ? 24 : 30;
+    const dxOffsets = [0];
+    for (let step = 1; step <= 8; step += 1) {
+      dxOffsets.push(dxStep * step, -dxStep * step);
+    }
 
     const overlaps = (a, b) => (
       a.x < b.x + b.width
@@ -821,6 +889,41 @@ function App() {
       && a.y < b.y + b.height
       && a.y + a.height > b.y
     );
+
+    const obstacles = [];
+    for (const node of renderLayout.nodes || []) {
+      if (!node) continue;
+      const pad = 6;
+      obstacles.push({
+        x: (Number(node.x) || 0) - pad,
+        y: (Number(node.y) || 0) - pad,
+        width: (Number(node.width) || 0) + pad * 2,
+        height: (Number(node.height) || 0) + pad * 2,
+      });
+    }
+    for (const container of renderLayout.moduleContainers || []) {
+      if (!container || String(container.id || "").startsWith("layer:")) {
+        continue;
+      }
+      const level = Number(container.level || 0);
+      const title = studio.clipByUnits(container.name, 18);
+      const label = `${title} · L${level}`;
+      const units = studio.textUnits(label);
+      const showToggle = level > 0;
+      const minTextPadding = showToggle ? 54 : 36;
+      const maxHeaderWidth = Math.max(92, (container.width || 0) - 20);
+      const headerWidth = Math.min(
+        maxHeaderWidth,
+        Math.max(92, minTextPadding + units * 10.2),
+      );
+      const pad = 8;
+      obstacles.push({
+        x: (Number(container.x) || 0) + 10 - pad,
+        y: (Number(container.y) || 0) + 3 - pad,
+        width: headerWidth + pad * 2,
+        height: 18 + pad * 2,
+      });
+    }
 
     const candidates = [];
     for (const edge of visibleEdges) {
@@ -860,32 +963,49 @@ function App() {
     const output = {};
     const minY = 12;
     const maxY = Math.max(minY, (Number(renderLayout.height) || 0) - 6);
+    const minX = 12;
 
     for (const item of candidates) {
-      const baseX = Number(item.geometry.labelX) || 0;
+      const baseXRaw = Number(item.geometry.labelX) || 0;
       const baseY = Number(item.geometry.labelY) || 0;
-      const textLen = Math.max(0, item.labelText.length);
-      const estWidth = Math.max(34, textLen * charWidth + 10);
+      const textUnits = studio.textUnits(item.labelText);
+      const estWidth = Math.max(38, textUnits * unitPx + 18);
+      const maxX = Math.max(minX, (Number(renderLayout.width) || 0) - estWidth - 12);
+      const baseX = Math.min(maxX, Math.max(minX, baseXRaw));
 
       let best = { x: baseX, y: Math.min(maxY, Math.max(minY, baseY)) };
       let bestBox = null;
-      for (const dy of tryOffsets) {
+      const padX = denseLabelMode ? 6 : 8;
+      const padY = denseLabelMode ? 5 : 6;
+      for (const dy of dyOffsets) {
         const y = Math.min(maxY, Math.max(minY, baseY + dy));
-        // SVG text uses the baseline as `y`; approximate bbox above baseline.
-        const box = { x: baseX - 2, y: y - (labelHeight - 2), width: estWidth + 4, height: labelHeight };
-        if (placed.some((other) => overlaps(box, other))) {
-          continue;
+        for (const dx of dxOffsets) {
+          const x = Math.min(maxX, Math.max(minX, baseX + dx));
+          // SVG text uses the baseline as `y`; approximate bbox above baseline.
+          const box = {
+            x: x - padX,
+            y: y - labelHeight - padY,
+            width: estWidth + padX * 2,
+            height: labelHeight + padY * 2,
+          };
+          if (placed.some((other) => overlaps(box, other))) {
+            continue;
+          }
+          if (obstacles.some((other) => overlaps(box, other))) {
+            continue;
+          }
+          best = { x, y };
+          bestBox = box;
+          break;
         }
-        best = { x: baseX, y };
-        bestBox = box;
-        break;
+        if (bestBox) break;
       }
       if (!bestBox) {
         bestBox = {
-          x: best.x - 2,
-          y: best.y - (labelHeight - 2),
-          width: estWidth + 4,
-          height: labelHeight,
+          x: best.x - padX,
+          y: best.y - labelHeight - padY,
+          width: estWidth + padX * 2,
+          height: labelHeight + padY * 2,
         };
       }
       output[item.id] = best;
@@ -903,6 +1023,9 @@ function App() {
     selectedIsVisible,
     hoverNodeId,
     renderLayout.height,
+    renderLayout.width,
+    renderLayout.nodes,
+    renderLayout.moduleContainers,
   ]);
   const selectionNeighborIds = useMemo(() => {
     if (!selectedModuleId) return new Set();
@@ -1459,6 +1582,21 @@ function App() {
       nextRight = nextLeft + nextWidth;
     }
     if (resize.handle === "bottom" || resize.handle === "br") {
+      nextBottom = nextTop + nextHeight;
+    }
+
+    // Prevent resize operations from pushing frames into negative space. That causes a global
+    // normalize shift (everything jumps), which feels wrong for manual "Vivado-like" editing.
+    const clampMinX = resize.kind === "container" ? 8 : 12;
+    const clampMinY = resize.kind === "container" ? 8 : 12;
+    if (resize.handle === "left" && nextLeft < clampMinX) {
+      nextLeft = clampMinX;
+      nextWidth = Math.max(resize.minWidth, nextRight - nextLeft);
+      nextRight = nextLeft + nextWidth;
+    }
+    if (resize.handle === "top" && nextTop < clampMinY) {
+      nextTop = clampMinY;
+      nextHeight = Math.max(resize.minHeight, nextBottom - nextTop);
       nextBottom = nextTop + nextHeight;
     }
 
@@ -2534,7 +2672,7 @@ function App() {
                   const dimmedBySelection = (!hoverNodeId && edgeScope === "selected" && selectedIsVisible && selectedModuleId && node.id !== selectedModuleId && !isNeighborNode);
                   const showPins = !autoHidePins || isSelectedNode || isFocusedNode || isHoveredNode || isNeighborNode || (activePortFocus && activePortFocus.nodeId === node.id);
                   const dimmed = dimmedByHover || dimmedBySelection;
-                  const showResizeHandle = isFocusedNode || isSelectedNode || isHoveredNode;
+                  const showResizeHandle = isFocusedNode || isHoveredNode;
                   const handleSize = 16;
                   const handleX = node.x + node.width - handleSize - 6;
                   const handleY = node.y + node.height - handleSize - 6;

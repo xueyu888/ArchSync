@@ -38,6 +38,30 @@ function sampleUniqueIndices(size, count) {
   return indices.slice(0, Math.max(0, Math.min(count, indices.length)));
 }
 
+function parseJsonSafe(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function findManualLayoutEntry(layouts, itemId) {
+  if (!layouts || typeof layouts !== "object" || !itemId) {
+    return null;
+  }
+  for (const [parentId, entries] of Object.entries(layouts)) {
+    if (!entries || typeof entries !== "object") {
+      continue;
+    }
+    const entry = entries[itemId];
+    if (entry && typeof entry === "object") {
+      return { parentId, entry };
+    }
+  }
+  return null;
+}
+
 async function main() {
   await ensureDir(OUT_DIR);
   const stamp = isoStamp();
@@ -203,6 +227,18 @@ async function main() {
           }
         }
 
+        for (const header of headers) {
+          const containerBB = bodyById.get(header.id);
+          if (!containerBB) continue;
+          if (!contains(containerBB, header.bb, -0.8)) {
+            headerContainmentViolations.push({ id: header.id, container: containerBB, header: header.bb });
+          }
+          const offsetY = header.bb.y - containerBB.y;
+          if (!(offsetY >= -1 && offsetY <= 14)) {
+            headerPlacementViolations.push({ id: header.id, offsetY, container: containerBB, header: header.bb });
+          }
+        }
+
         const nodes = [];
         for (const group of nodeGroups) {
           const id = group.getAttribute("data-id") || "";
@@ -290,6 +326,37 @@ async function main() {
           }
         }
 
+        const edgeLabelNodeOverlapPairs = [];
+        for (let i = 0; i < edgeLabels.length; i += 1) {
+          for (let j = 0; j < nodeBoxes.length; j += 1) {
+            const area = overlapArea(edgeLabels[i].bb, nodeBoxes[j]);
+            if (area > 18) {
+              edgeLabelNodeOverlapPairs.push({
+                labelIndex: i,
+                nodeIndex: j,
+                area,
+                label: edgeLabels[i].text,
+                nodeId: nodes[j]?.id,
+              });
+            }
+          }
+        }
+        const edgeLabelHeaderOverlapPairs = [];
+        for (let i = 0; i < edgeLabels.length; i += 1) {
+          for (let j = 0; j < headerBoxes.length; j += 1) {
+            const area = overlapArea(edgeLabels[i].bb, headerBoxes[j]);
+            if (area > 12) {
+              edgeLabelHeaderOverlapPairs.push({
+                labelIndex: i,
+                headerIndex: j,
+                area,
+                label: edgeLabels[i].text,
+                headerId: headers[j]?.id,
+              });
+            }
+          }
+        }
+
         return {
           containerCount: bodyById.size,
           containmentViolations,
@@ -306,6 +373,8 @@ async function main() {
           edgeNodeIntersections,
           edgeLabelCount: edgeLabels.length,
           edgeLabelOverlapPairs,
+          edgeLabelNodeOverlapPairs,
+          edgeLabelHeaderOverlapPairs,
         };
       });
     }
@@ -332,7 +401,7 @@ async function main() {
         const rect = document.querySelector(`svg.diagram g.node[data-id="${id}"] rect.node-body`);
         if (!rect || typeof rect.getBBox !== "function") return null;
         const bb = rect.getBBox();
-        return { width: bb.width, height: bb.height };
+        return { x: bb.x, y: bb.y, width: bb.width, height: bb.height };
       }, resizeTargetId);
 
       const handle = page.locator(`svg.diagram g.node[data-id="${resizeTargetId}"] g.node-resize-handle[data-edge="br"] rect.frame-resize-hit`).first();
@@ -350,16 +419,81 @@ async function main() {
         report.failures.push(`missing resize handle for node: ${resizeTargetId}`);
       }
 
+      const leftHandle = page.locator(`svg.diagram g.node[data-id="${resizeTargetId}"] g.node-resize-handle[data-edge="left"] rect.frame-resize-hit`).first();
+      if (await leftHandle.count()) {
+        await leftHandle.scrollIntoViewIfNeeded();
+        const bb = await leftHandle.boundingBox();
+        if (bb) {
+          await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(bb.x + bb.width / 2 - 120, bb.y + bb.height / 2, { steps: 10 });
+          await page.mouse.up();
+          await page.waitForTimeout(220);
+        }
+      } else {
+        report.failures.push(`missing left resize handle for node: ${resizeTargetId}`);
+      }
+
+      const topHandle = page.locator(`svg.diagram g.node[data-id="${resizeTargetId}"] g.node-resize-handle[data-edge="top"] rect.frame-resize-hit`).first();
+      if (await topHandle.count()) {
+        await topHandle.scrollIntoViewIfNeeded();
+        const bb = await topHandle.boundingBox();
+        if (bb) {
+          await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2 - 96, { steps: 10 });
+          await page.mouse.up();
+          await page.waitForTimeout(220);
+        }
+      } else {
+        report.failures.push(`missing top resize handle for node: ${resizeTargetId}`);
+      }
+
       const after = await page.evaluate((id) => {
         const rect = document.querySelector(`svg.diagram g.node[data-id="${id}"] rect.node-body`);
         if (!rect || typeof rect.getBBox !== "function") return null;
         const bb = rect.getBBox();
-        return { width: bb.width, height: bb.height };
+        return { x: bb.x, y: bb.y, width: bb.width, height: bb.height };
       }, resizeTargetId);
       report.resize_smoke = { id: resizeTargetId, before, after };
+      if (before && after) {
+        if (!(after.width >= before.width + 20 && after.height >= before.height + 20)) {
+          report.failures.push(`node resize smoke did not grow enough: ${resizeTargetId}`);
+        }
+        if (!(after.x <= before.x - 8 && after.y <= before.y - 8)) {
+          report.failures.push(`node resize smoke did not move top/left as expected: ${resizeTargetId}`);
+        }
+      }
       report.resize_smoke_metrics = await evaluateMetrics();
+      if (report.resize_smoke_metrics?.edgeNodeIntersectionCount) {
+        report.failures.push(`edge under node regressions (resize smoke): ${report.resize_smoke_metrics.edgeNodeIntersectionCount}`);
+      }
+      if (report.resize_smoke_metrics?.containmentViolations?.length) {
+        report.failures.push(`container containment violations (resize smoke): ${report.resize_smoke_metrics.containmentViolations.length}`);
+      }
+      if (report.resize_smoke_metrics?.headerOverlapPairs?.length) {
+        report.failures.push(`header overlap pairs (resize smoke): ${report.resize_smoke_metrics.headerOverlapPairs.length}`);
+      }
+      if (report.resize_smoke_metrics?.headerNodeOverlapPairs?.length) {
+        report.failures.push(`header/node overlap pairs (resize smoke): ${report.resize_smoke_metrics.headerNodeOverlapPairs.length}`);
+      }
+      if (report.resize_smoke_metrics?.renderedLayerNodes?.length) {
+        report.failures.push(`layer nodes rendered (resize smoke): ${report.resize_smoke_metrics.renderedLayerNodes.length}`);
+      }
       if (report.resize_smoke_metrics?.edgeLabelOverlapPairs?.length) {
         report.failures.push(`edge label overlaps (resize smoke): ${report.resize_smoke_metrics.edgeLabelOverlapPairs.length}`);
+      }
+      if (report.resize_smoke_metrics?.edgeLabelNodeOverlapPairs?.length) {
+        report.failures.push(`edge label overlaps nodes (resize smoke): ${report.resize_smoke_metrics.edgeLabelNodeOverlapPairs.length}`);
+      }
+      if (report.resize_smoke_metrics?.edgeLabelHeaderOverlapPairs?.length) {
+        report.failures.push(`edge label overlaps headers (resize smoke): ${report.resize_smoke_metrics.edgeLabelHeaderOverlapPairs.length}`);
+      }
+      if (report.resize_smoke_metrics?.headerContainmentViolations?.length) {
+        report.failures.push(`header containment violations (resize smoke): ${report.resize_smoke_metrics.headerContainmentViolations.length}`);
+      }
+      if (report.resize_smoke_metrics?.headerPlacementViolations?.length) {
+        report.failures.push(`header placement violations (resize smoke): ${report.resize_smoke_metrics.headerPlacementViolations.length}`);
       }
 
       const resizeContainerId = await page.evaluate(() => {
@@ -384,7 +518,7 @@ async function main() {
           const rect = document.querySelector(`svg.diagram g.module-container-body-layer[data-id="${id}"] rect.module-container-body`);
           if (!rect || typeof rect.getBBox !== "function") return null;
           const bb = rect.getBBox();
-          return { width: bb.width, height: bb.height };
+          return { x: bb.x, y: bb.y, width: bb.width, height: bb.height };
         }, resizeContainerId);
 
         const cHandle = page.locator(`svg.diagram g.container-resize-handle[data-id="${resizeContainerId}"][data-edge="br"] rect.frame-resize-hit`).first();
@@ -402,17 +536,139 @@ async function main() {
           report.failures.push(`missing resize handle for container: ${resizeContainerId}`);
         }
 
+        const cLeftHandle = page.locator(`svg.diagram g.container-resize-handle[data-id="${resizeContainerId}"][data-edge="left"] rect.frame-resize-hit`).first();
+        if (await cLeftHandle.count()) {
+          await cLeftHandle.scrollIntoViewIfNeeded();
+          const bb = await cLeftHandle.boundingBox();
+          if (bb) {
+            await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+            await page.mouse.down();
+            await page.mouse.move(bb.x + bb.width / 2 - 140, bb.y + bb.height / 2, { steps: 10 });
+            await page.mouse.up();
+            await page.waitForTimeout(220);
+          }
+        } else {
+          report.failures.push(`missing left resize handle for container: ${resizeContainerId}`);
+        }
+
+        const cTopHandle = page.locator(`svg.diagram g.container-resize-handle[data-id="${resizeContainerId}"][data-edge="top"] rect.frame-resize-hit`).first();
+        if (await cTopHandle.count()) {
+          await cTopHandle.scrollIntoViewIfNeeded();
+          const bb = await cTopHandle.boundingBox();
+          if (bb) {
+            await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+            await page.mouse.down();
+            await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2 - 110, { steps: 10 });
+            await page.mouse.up();
+            await page.waitForTimeout(220);
+          }
+        } else {
+          report.failures.push(`missing top resize handle for container: ${resizeContainerId}`);
+        }
+
         const cAfter = await page.evaluate((id) => {
           const rect = document.querySelector(`svg.diagram g.module-container-body-layer[data-id="${id}"] rect.module-container-body`);
           if (!rect || typeof rect.getBBox !== "function") return null;
           const bb = rect.getBBox();
-          return { width: bb.width, height: bb.height };
+          return { x: bb.x, y: bb.y, width: bb.width, height: bb.height };
         }, resizeContainerId);
 
         report.container_resize_smoke = { id: resizeContainerId, before: cBefore, after: cAfter };
+        if (cBefore && cAfter) {
+          if (!(cAfter.width >= cBefore.width + 30 && cAfter.height >= cBefore.height + 30)) {
+            report.failures.push(`container resize smoke did not grow enough: ${resizeContainerId}`);
+          }
+          // Container frames are normalized to keep the diagram in positive space. If a container
+          // already sits at the left/top clamp, dragging those edges can still resize but won't
+          // necessarily reduce x/y further.
+          const clampMin = 8.6;
+          const movedLeft = cAfter.x <= cBefore.x - 8 || cAfter.x <= clampMin;
+          const movedUp = cAfter.y <= cBefore.y - 8 || cAfter.y <= clampMin;
+          if (!(movedLeft && movedUp)) {
+            report.failures.push(`container resize smoke did not move top/left as expected: ${resizeContainerId}`);
+          }
+        }
         report.container_resize_smoke_metrics = await evaluateMetrics();
+        if (report.container_resize_smoke_metrics?.edgeNodeIntersectionCount) {
+          report.failures.push(`edge under node regressions (container resize smoke): ${report.container_resize_smoke_metrics.edgeNodeIntersectionCount}`);
+        }
+        if (report.container_resize_smoke_metrics?.containmentViolations?.length) {
+          report.failures.push(`container containment violations (container resize smoke): ${report.container_resize_smoke_metrics.containmentViolations.length}`);
+        }
+        if (report.container_resize_smoke_metrics?.headerOverlapPairs?.length) {
+          report.failures.push(`header overlap pairs (container resize smoke): ${report.container_resize_smoke_metrics.headerOverlapPairs.length}`);
+        }
+        if (report.container_resize_smoke_metrics?.headerNodeOverlapPairs?.length) {
+          report.failures.push(`header/node overlap pairs (container resize smoke): ${report.container_resize_smoke_metrics.headerNodeOverlapPairs.length}`);
+        }
+        if (report.container_resize_smoke_metrics?.renderedLayerNodes?.length) {
+          report.failures.push(`layer nodes rendered (container resize smoke): ${report.container_resize_smoke_metrics.renderedLayerNodes.length}`);
+        }
         if (report.container_resize_smoke_metrics?.edgeLabelOverlapPairs?.length) {
           report.failures.push(`edge label overlaps (container resize smoke): ${report.container_resize_smoke_metrics.edgeLabelOverlapPairs.length}`);
+        }
+        if (report.container_resize_smoke_metrics?.edgeLabelNodeOverlapPairs?.length) {
+          report.failures.push(`edge label overlaps nodes (container resize smoke): ${report.container_resize_smoke_metrics.edgeLabelNodeOverlapPairs.length}`);
+        }
+        if (report.container_resize_smoke_metrics?.edgeLabelHeaderOverlapPairs?.length) {
+          report.failures.push(`edge label overlaps headers (container resize smoke): ${report.container_resize_smoke_metrics.edgeLabelHeaderOverlapPairs.length}`);
+        }
+        if (report.container_resize_smoke_metrics?.headerContainmentViolations?.length) {
+          report.failures.push(`header containment violations (container resize smoke): ${report.container_resize_smoke_metrics.headerContainmentViolations.length}`);
+        }
+        if (report.container_resize_smoke_metrics?.headerPlacementViolations?.length) {
+          report.failures.push(`header placement violations (container resize smoke): ${report.container_resize_smoke_metrics.headerPlacementViolations.length}`);
+        }
+      }
+
+      const manualLayoutsRawBeforeReload = await page.evaluate(() => window.localStorage.getItem("archsync.manualLayouts.v1") || "");
+      const manualLayoutsBeforeReload = parseJsonSafe(manualLayoutsRawBeforeReload) || {};
+      report.manual_layouts_debug = {
+        beforeReload: {
+          node: findManualLayoutEntry(manualLayoutsBeforeReload, resizeTargetId),
+          container: resizeContainerId ? findManualLayoutEntry(manualLayoutsBeforeReload, resizeContainerId) : null,
+        },
+      };
+
+      // Reload once and ensure manual resizing persists (Vivado-like determinism).
+      await page.waitForTimeout(420);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByText("API:", { exact: false }).waitFor({ timeout: 60_000 });
+      await moduleItems.first().waitFor({ timeout: 90_000 });
+      await page.waitForTimeout(200);
+
+      const manualLayoutsRawAfterReload = await page.evaluate(() => window.localStorage.getItem("archsync.manualLayouts.v1") || "");
+      const manualLayoutsAfterReload = parseJsonSafe(manualLayoutsRawAfterReload) || {};
+      report.manual_layouts_debug.afterReload = {
+        node: findManualLayoutEntry(manualLayoutsAfterReload, resizeTargetId),
+        container: resizeContainerId ? findManualLayoutEntry(manualLayoutsAfterReload, resizeContainerId) : null,
+      };
+
+      const nodeAfterReload = await page.evaluate((id) => {
+        const rect = document.querySelector(`svg.diagram g.node[data-id="${id}"] rect.node-body`);
+        if (!rect || typeof rect.getBBox !== "function") return null;
+        const bb = rect.getBBox();
+        return { x: bb.x, y: bb.y, width: bb.width, height: bb.height };
+      }, resizeTargetId);
+      const containerAfterReload = resizeContainerId ? await page.evaluate((id) => {
+        const rect = document.querySelector(`svg.diagram g.module-container-body-layer[data-id="${id}"] rect.module-container-body`);
+        if (!rect || typeof rect.getBBox !== "function") return null;
+        const bb = rect.getBBox();
+        return { x: bb.x, y: bb.y, width: bb.width, height: bb.height };
+      }, resizeContainerId) : null;
+      report.resize_smoke_persisted = {
+        node: { id: resizeTargetId, afterReload: nodeAfterReload },
+        container: resizeContainerId ? { id: resizeContainerId, afterReload: containerAfterReload } : null,
+      };
+      if (after && nodeAfterReload) {
+        if (Math.abs(nodeAfterReload.width - after.width) > 1.2 || Math.abs(nodeAfterReload.height - after.height) > 1.2) {
+          report.failures.push(`node resize did not persist after reload: ${resizeTargetId}`);
+        }
+      }
+      if (resizeContainerId && report.container_resize_smoke?.after && containerAfterReload) {
+        const expected = report.container_resize_smoke.after;
+        if (Math.abs(containerAfterReload.width - expected.width) > 1.2 || Math.abs(containerAfterReload.height - expected.height) > 1.2) {
+          report.failures.push(`container resize did not persist after reload: ${resizeContainerId}`);
         }
       }
 
@@ -474,8 +730,35 @@ async function main() {
 
     await page.screenshot({ path: hierarchyPng, fullPage: true });
     report.hierarchy_metrics = await evaluateMetrics();
+    if (report.hierarchy_metrics?.edgeNodeIntersectionCount) {
+      report.failures.push(`edge under node regressions (hierarchy): ${report.hierarchy_metrics.edgeNodeIntersectionCount}`);
+    }
+    if (report.hierarchy_metrics?.containmentViolations?.length) {
+      report.failures.push(`container containment violations (hierarchy): ${report.hierarchy_metrics.containmentViolations.length}`);
+    }
+    if (report.hierarchy_metrics?.headerOverlapPairs?.length) {
+      report.failures.push(`header overlap pairs (hierarchy): ${report.hierarchy_metrics.headerOverlapPairs.length}`);
+    }
+    if (report.hierarchy_metrics?.headerNodeOverlapPairs?.length) {
+      report.failures.push(`header/node overlap pairs (hierarchy): ${report.hierarchy_metrics.headerNodeOverlapPairs.length}`);
+    }
+    if (report.hierarchy_metrics?.renderedLayerNodes?.length) {
+      report.failures.push(`layer nodes rendered (hierarchy): ${report.hierarchy_metrics.renderedLayerNodes.length}`);
+    }
     if (report.hierarchy_metrics?.edgeLabelOverlapPairs?.length) {
       report.failures.push(`edge label overlaps (hierarchy): ${report.hierarchy_metrics.edgeLabelOverlapPairs.length}`);
+    }
+    if (report.hierarchy_metrics?.edgeLabelNodeOverlapPairs?.length) {
+      report.failures.push(`edge label overlaps nodes (hierarchy): ${report.hierarchy_metrics.edgeLabelNodeOverlapPairs.length}`);
+    }
+    if (report.hierarchy_metrics?.edgeLabelHeaderOverlapPairs?.length) {
+      report.failures.push(`edge label overlaps headers (hierarchy): ${report.hierarchy_metrics.edgeLabelHeaderOverlapPairs.length}`);
+    }
+    if (report.hierarchy_metrics?.headerContainmentViolations?.length) {
+      report.failures.push(`header containment violations (hierarchy): ${report.hierarchy_metrics.headerContainmentViolations.length}`);
+    }
+    if (report.hierarchy_metrics?.headerPlacementViolations?.length) {
+      report.failures.push(`header placement violations (hierarchy): ${report.hierarchy_metrics.headerPlacementViolations.length}`);
     }
 
     if (expandTargetId) {
@@ -523,8 +806,35 @@ async function main() {
 
     // DOM/geometry checks (containment, chip overlaps, no layer:* nodes rendered).
     report.metrics = await evaluateMetrics();
+    if (report.metrics?.edgeNodeIntersectionCount) {
+      report.failures.push(`edge under node regressions (stress): ${report.metrics.edgeNodeIntersectionCount}`);
+    }
+    if (report.metrics?.containmentViolations?.length) {
+      report.failures.push(`container containment violations (stress): ${report.metrics.containmentViolations.length}`);
+    }
+    if (report.metrics?.headerOverlapPairs?.length) {
+      report.failures.push(`header overlap pairs (stress): ${report.metrics.headerOverlapPairs.length}`);
+    }
+    if (report.metrics?.headerNodeOverlapPairs?.length) {
+      report.failures.push(`header/node overlap pairs (stress): ${report.metrics.headerNodeOverlapPairs.length}`);
+    }
+    if (report.metrics?.renderedLayerNodes?.length) {
+      report.failures.push(`layer nodes rendered (stress): ${report.metrics.renderedLayerNodes.length}`);
+    }
     if (report.metrics?.edgeLabelOverlapPairs?.length) {
       report.failures.push(`edge label overlaps (stress): ${report.metrics.edgeLabelOverlapPairs.length}`);
+    }
+    if (report.metrics?.edgeLabelNodeOverlapPairs?.length) {
+      report.failures.push(`edge label overlaps nodes (stress): ${report.metrics.edgeLabelNodeOverlapPairs.length}`);
+    }
+    if (report.metrics?.edgeLabelHeaderOverlapPairs?.length) {
+      report.failures.push(`edge label overlaps headers (stress): ${report.metrics.edgeLabelHeaderOverlapPairs.length}`);
+    }
+    if (report.metrics?.headerContainmentViolations?.length) {
+      report.failures.push(`header containment violations (stress): ${report.metrics.headerContainmentViolations.length}`);
+    }
+    if (report.metrics?.headerPlacementViolations?.length) {
+      report.failures.push(`header placement violations (stress): ${report.metrics.headerPlacementViolations.length}`);
     }
 
     await page.screenshot({ path: stressPng, fullPage: true });
