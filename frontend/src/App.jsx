@@ -828,8 +828,8 @@ function App() {
       const maxX = Math.max(minX, (Number(renderLayout.width) || 0) - estWidth - 12);
       const baseX = Math.min(maxX, Math.max(minX, baseXRaw));
 
-      let best = { x: baseX, y: Math.min(maxY, Math.max(minY, baseY)) };
       let bestBox = null;
+      let best = null;
       const padX = denseLabelMode ? 6 : 8;
       const padY = denseLabelMode ? 5 : 6;
       for (const dy of dyOffsets) {
@@ -856,12 +856,8 @@ function App() {
         if (bestBox) break;
       }
       if (!bestBox) {
-        bestBox = {
-          x: best.x - padX,
-          y: best.y - labelHeight - padY,
-          width: estWidth + padX * 2,
-          height: labelHeight + padY * 2,
-        };
+        // Never force-label into obstacles; skipping is better than overlapping nodes/headers.
+        continue;
       }
       output[item.id] = best;
       placed.push(bestBox);
@@ -2396,11 +2392,11 @@ function App() {
                 const selected = selectedByEdge
                   || (!selectedEdgeId && relatedToSelectedModule)
                   || relatedToHover;
-                const showLabel = showEdgeLabels && (!denseLabelMode || selected || selectedByEdge || relatedToHover);
-                const labelText = studio.clip(edge.label, denseLabelMode ? 22 : 34);
                 const labelPos = edgeLabelPositionsById[edge.id];
-                const labelX = labelPos?.x ?? geometry.labelX;
-                const labelY = labelPos?.y ?? geometry.labelY;
+                const showLabel = !!labelPos && showEdgeLabels && (!denseLabelMode || selected || selectedByEdge || relatedToHover);
+                const labelText = studio.clip(edge.label, denseLabelMode ? 22 : 34);
+                const labelX = labelPos?.x || 0;
+                const labelY = labelPos?.y || 0;
                 let dimmed = false;
                 if (selectedEdgeId) {
                   dimmed = edge.id !== selectedEdgeId;

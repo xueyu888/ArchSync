@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "qa:expand-all": "node scripts/studio-expand-all-qa.mjs"
+    "qa:expand-all": "node scripts/studio-expand-all-qa.mjs",
+    "qa:soak": "node scripts/studio-soak.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",

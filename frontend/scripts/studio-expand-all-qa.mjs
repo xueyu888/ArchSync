@@ -49,6 +49,39 @@ async function evaluateContainerGeometry(page) {
       }
       return { x, y, width, height };
     }
+    function parseNodeRect(group) {
+      const rect = group.querySelector("rect.node-body");
+      if (!rect) return null;
+      const x = Number.parseFloat(rect.getAttribute("x") || "0");
+      const y = Number.parseFloat(rect.getAttribute("y") || "0");
+      const width = Number.parseFloat(rect.getAttribute("width") || "0");
+      const height = Number.parseFloat(rect.getAttribute("height") || "0");
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) {
+        return null;
+      }
+      return { x, y, width, height };
+    }
+    function parseHeaderRect(group) {
+      const rect = group.querySelector("rect.hierarchy-chip-bg");
+      if (!rect) return null;
+      const x = Number.parseFloat(rect.getAttribute("x") || "0");
+      const y = Number.parseFloat(rect.getAttribute("y") || "0");
+      const width = Number.parseFloat(rect.getAttribute("width") || "0");
+      const height = Number.parseFloat(rect.getAttribute("height") || "0");
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) {
+        return null;
+      }
+      return { x, y, width, height };
+    }
+    function contains(outer, inner, pad = 0) {
+      if (!outer || !inner) return false;
+      return (
+        inner.x >= outer.x + pad
+        && inner.y >= outer.y + pad
+        && inner.x + inner.width <= outer.x + outer.width - pad
+        && inner.y + inner.height <= outer.y + outer.height - pad
+      );
+    }
 
     function overlapArea(a, b) {
       const x0 = Math.max(a.x, b.x);
@@ -69,6 +102,7 @@ async function evaluateContainerGeometry(page) {
       if (!rect) continue;
       containers.push({ id, parentId, ...rect });
     }
+    const containerById = Object.fromEntries(containers.map((item) => [item.id, item]));
 
     const parentById = Object.fromEntries(containers.map((item) => [item.id, item.parentId || ""]));
     function isAncestor(candidateAncestorId, candidateDescendantId) {
@@ -98,11 +132,64 @@ async function evaluateContainerGeometry(page) {
         }
       }
     }
+    const containmentViolations = [];
+    for (const container of containers) {
+      if (!container.parentId) continue;
+      const parent = containerById[container.parentId];
+      if (!parent) continue;
+      if (!contains(parent, container, -0.6)) {
+        containmentViolations.push({
+          id: container.id,
+          parentId: container.parentId,
+        });
+      }
+    }
+
+    const headerGroups = Array.from(document.querySelectorAll("g.hierarchy-chip"));
+    const headerContainmentViolations = [];
+    for (const group of headerGroups) {
+      const id = String(group.getAttribute("data-id") || "");
+      if (!id) continue;
+      const container = containerById[id];
+      if (!container) continue;
+      const header = parseHeaderRect(group);
+      if (!header) continue;
+      if (!contains(container, header, -0.8)) {
+        headerContainmentViolations.push({ id });
+      }
+    }
+
+    const nodeContainmentViolations = [];
+    const nodeGroups = Array.from(document.querySelectorAll("svg.diagram g.node"));
+    for (const group of nodeGroups) {
+      const id = String(group.getAttribute("data-id") || "");
+      const parentId = String(group.getAttribute("data-parent") || "");
+      const nodeRect = parseNodeRect(group);
+      if (!id || !nodeRect) continue;
+      let current = parentId;
+      let guard = 0;
+      while (current && guard < 96) {
+        const container = containerById[current];
+        if (container && !contains(container, nodeRect, -0.6)) {
+          nodeContainmentViolations.push({ nodeId: id, containerId: current });
+          break;
+        }
+        current = parentById[current] || "";
+        guard += 1;
+      }
+    }
 
     return {
       containerCount: containers.length,
+      nodeCount: nodeGroups.length,
       overlapViolationCount: overlapViolations.length,
       overlapViolations,
+      containmentViolationCount: containmentViolations.length,
+      containmentViolations,
+      headerContainmentViolationCount: headerContainmentViolations.length,
+      headerContainmentViolations,
+      nodeContainmentViolationCount: nodeContainmentViolations.length,
+      nodeContainmentViolations,
     };
   });
 }
@@ -218,13 +305,24 @@ async function main() {
         expandedNodeLevel: target.level,
         containerCount: geometry.containerCount,
         overlapViolationCount: geometry.overlapViolationCount,
+        containmentViolationCount: geometry.containmentViolationCount,
+        headerContainmentViolationCount: geometry.headerContainmentViolationCount,
+        nodeContainmentViolationCount: geometry.nodeContainmentViolationCount,
       });
 
-      if (geometry.overlapViolationCount > 0) {
+      if (
+        geometry.overlapViolationCount > 0
+        || geometry.containmentViolationCount > 0
+        || geometry.headerContainmentViolationCount > 0
+        || geometry.nodeContainmentViolationCount > 0
+      ) {
         report.violations.push({
           step,
           expandedNodeId: target.id,
           overlapViolations: geometry.overlapViolations,
+          containmentViolations: geometry.containmentViolations,
+          headerContainmentViolations: geometry.headerContainmentViolations,
+          nodeContainmentViolations: geometry.nodeContainmentViolations,
         });
         break;
       }
@@ -245,13 +343,25 @@ async function main() {
     report.final = {
       stepCount: step,
       containerCount: finalGeometry.containerCount,
+      nodeCount: finalGeometry.nodeCount,
       overlapViolationCount: finalGeometry.overlapViolationCount,
+      containmentViolationCount: finalGeometry.containmentViolationCount,
+      headerContainmentViolationCount: finalGeometry.headerContainmentViolationCount,
+      nodeContainmentViolationCount: finalGeometry.nodeContainmentViolationCount,
     };
-    if (finalGeometry.overlapViolationCount > 0) {
+    if (
+      finalGeometry.overlapViolationCount > 0
+      || finalGeometry.containmentViolationCount > 0
+      || finalGeometry.headerContainmentViolationCount > 0
+      || finalGeometry.nodeContainmentViolationCount > 0
+    ) {
       report.violations.push({
         step: step + 1,
         expandedNodeId: "final",
         overlapViolations: finalGeometry.overlapViolations,
+        containmentViolations: finalGeometry.containmentViolations,
+        headerContainmentViolations: finalGeometry.headerContainmentViolations,
+        nodeContainmentViolations: finalGeometry.nodeContainmentViolations,
       });
     }
   } catch (error) {
