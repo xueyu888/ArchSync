@@ -8,6 +8,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from trend_indicator import TrendConfig, TrendContext, classify_trend
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ARCHSYNC_DIR = REPO_ROOT / "tools" / "archsync"
 
@@ -36,6 +38,21 @@ class CIGateRequest(BaseModel):
     rules_path: str = ".archsync/rules.yaml"
     output_path: str = "docs/archsync/ci"
     fail_on: str = Field(default="high", pattern="^(none|low|medium|high|critical)$")
+
+
+class TrendIndicatorRequest(BaseModel):
+    close: float
+    ma20: float
+    high: float
+    low: float
+    h1: float | None = None
+    h2: float | None = None
+    l1: float | None = None
+    l2: float | None = None
+    high_confirmed: bool = False
+    low_confirmed: bool = False
+    ma_band_pct: float = Field(default=0.01, ge=0.0, le=0.2)
+    eps: float = Field(default=0.01, ge=0.0, le=0.2)
 
 
 app = FastAPI(title="ArchSync Backend API", version="0.2.0")
@@ -259,6 +276,32 @@ def ci_archsync(payload: CIGateRequest) -> dict:
         "stdout": process.stdout,
         "stderr": process.stderr,
         "report": report,
+    }
+
+
+@app.post("/api/trend/classify")
+def classify_trend_indicator(payload: TrendIndicatorRequest) -> dict:
+    try:
+        result = classify_trend(
+            TrendContext(
+                close=payload.close,
+                ma20=payload.ma20,
+                high=payload.high,
+                low=payload.low,
+                h1=payload.h1,
+                h2=payload.h2,
+                l1=payload.l1,
+                l2=payload.l2,
+                high_confirmed=payload.high_confirmed,
+                low_confirmed=payload.low_confirmed,
+            ),
+            TrendConfig(ma_band_pct=payload.ma_band_pct, eps=payload.eps),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "result": result.to_dict(),
     }
 
 
