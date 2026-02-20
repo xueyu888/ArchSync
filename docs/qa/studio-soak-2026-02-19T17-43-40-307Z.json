@@ -1,0 +1,100 @@
+{
+  "startedAt": "2026-02-19T17:43:40.307Z",
+  "studioUrl": "http://127.0.0.1:5173/",
+  "config": {
+    "hours": 0.02,
+    "intervalSec": 1,
+    "stopOnFailure": true
+  },
+  "iterations": [
+    {
+      "index": 1,
+      "startedAt": "2026-02-19T17:43:40.333Z",
+      "e2e": {
+        "exitCode": 0,
+        "durationMs": 25220,
+        "reportPath": "docs/qa/studio-ui-regression-2026-02-19T17-43-40-583Z.json",
+        "failures": []
+      },
+      "expandAll": {
+        "exitCode": 0,
+        "durationMs": 25342,
+        "reportPath": "docs/qa/studio-expand-all-2026-02-19T17-44-05-802Z/report.json",
+        "failures": []
+      },
+      "failures": [],
+      "finishedAt": "2026-02-19T17:44:30.895Z"
+    },
+    {
+      "index": 2,
+      "startedAt": "2026-02-19T17:44:31.930Z",
+      "e2e": {
+        "exitCode": 0,
+        "durationMs": 30415,
+        "reportPath": "docs/qa/studio-ui-regression-2026-02-19T17-44-32-194Z.json",
+        "failures": []
+      },
+      "expandAll": {
+        "exitCode": 0,
+        "durationMs": 24030,
+        "reportPath": "docs/qa/studio-expand-all-2026-02-19T17-45-02-593Z/report.json",
+        "failures": []
+      },
+      "failures": [],
+      "finishedAt": "2026-02-19T17:45:26.376Z"
+    },
+    {
+      "index": 3,
+      "startedAt": "2026-02-19T17:45:27.378Z",
+      "e2e": {
+        "exitCode": 0,
+        "durationMs": 27690,
+        "reportPath": "docs/qa/studio-ui-regression-2026-02-19T17-45-27-621Z.json",
+        "failures": []
+      },
+      "expandAll": {
+        "exitCode": 0,
+        "durationMs": 26947,
+        "reportPath": "docs/qa/studio-expand-all-2026-02-19T17-45-55-319Z/report.json",
+        "failures": []
+      },
+      "failures": [],
+      "finishedAt": "2026-02-19T17:46:22.016Z"
+    },
+    {
+      "index": 4,
+      "startedAt": "2026-02-19T17:46:23.017Z",
+      "e2e": {
+        "exitCode": 1,
+        "durationMs": 27184,
+        "reportPath": "docs/qa/studio-ui-regression-2026-02-19T17-46-23-262Z.json",
+        "failures": [
+          "studio-e2e exit=1",
+          "report.failures=1"
+        ]
+      },
+      "expandAll": {
+        "exitCode": 0,
+        "durationMs": 25170,
+        "reportPath": "docs/qa/studio-expand-all-2026-02-19T17-46-50-445Z/report.json",
+        "failures": []
+      },
+      "failures": [
+        "studio-e2e exit=1",
+        "report.failures=1"
+      ],
+      "finishedAt": "2026-02-19T17:47:15.371Z"
+    }
+  ],
+  "failures": [
+    {
+      "iteration": 4,
+      "failures": [
+        "studio-e2e exit=1",
+        "report.failures=1"
+      ]
+    }
+  ],
+  "finishedAt": "2026-02-19T17:47:15.371Z",
+  "ok": false
+}

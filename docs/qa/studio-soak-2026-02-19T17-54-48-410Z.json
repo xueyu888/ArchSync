@@ -1,0 +1,68 @@
+{
+  "startedAt": "2026-02-19T17:54:48.410Z",
+  "studioUrl": "http://127.0.0.1:5173/",
+  "config": {
+    "hours": 0.03,
+    "intervalSec": 1,
+    "stopOnFailure": true
+  },
+  "iterations": [
+    {
+      "index": 1,
+      "startedAt": "2026-02-19T17:54:48.434Z",
+      "e2e": {
+        "exitCode": 0,
+        "durationMs": 27958,
+        "reportPath": "docs/qa/studio-ui-regression-2026-02-19T17-54-48-684Z.json",
+        "failures": []
+      },
+      "expandAll": {
+        "exitCode": 0,
+        "durationMs": 25307,
+        "reportPath": "docs/qa/studio-expand-all-2026-02-19T17-55-16-641Z/report.json",
+        "failures": []
+      },
+      "failures": [],
+      "finishedAt": "2026-02-19T17:55:41.701Z"
+    },
+    {
+      "index": 2,
+      "startedAt": "2026-02-19T17:55:42.703Z",
+      "e2e": {
+        "exitCode": 0,
+        "durationMs": 26350,
+        "reportPath": "docs/qa/studio-ui-regression-2026-02-19T17-55-42-947Z.json",
+        "failures": []
+      },
+      "expandAll": {
+        "exitCode": 0,
+        "durationMs": 25169,
+        "reportPath": "docs/qa/studio-expand-all-2026-02-19T17-56-09-301Z/report.json",
+        "failures": []
+      },
+      "failures": [],
+      "finishedAt": "2026-02-19T17:56:34.223Z"
+    },
+    {
+      "index": 3,
+      "startedAt": "2026-02-19T17:56:35.231Z",
+      "e2e": {
+        "exitCode": 0,
+        "durationMs": 25806,
+        "reportPath": "docs/qa/studio-ui-regression-2026-02-19T17-56-35-481Z.json",
+        "failures": []
+      },
+      "expandAll": {
+        "exitCode": 0,
+        "durationMs": 24969,
+        "reportPath": "docs/qa/studio-expand-all-2026-02-19T17-57-01-289Z/report.json",
+        "failures": []
+      },
+      "failures": [],
+      "finishedAt": "2026-02-19T17:57:26.008Z"
+    }
+  ],
+  "failures": [],
+  "finishedAt": "2026-02-19T17:57:26.008Z",
+  "ok": true
+}

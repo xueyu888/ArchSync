@@ -1,36 +1,36 @@
 {
-  "startedAt": "2026-02-13T15:24:35.065Z",
-  "studioUrl": "http://127.0.0.1:5174/",
-  "runDir": "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z",
+  "startedAt": "2026-02-20T02:00:15.296Z",
+  "studioUrl": "http://127.0.0.1:5173/",
+  "runDir": "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z",
   "screenshots": [
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/001-expand-c2291ca3f69cace0.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/002-expand-b9874576e2280d47.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/003-expand-3818f0cc1b68f6d5.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/004-expand-e81a7348dfdd06a9.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/005-expand-2a9e04ee7f7d2125.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/006-expand-741d9392966c413c.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/007-expand-9a4b48857a66f3aa.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/008-expand-b84137fe85bf0bdd.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/009-expand-76d26c181cefd123.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/010-expand-ec8d21f48aad4da9.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/011-expand-60297f617b2a0379.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/012-expand-c4b231659c8cafef.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/013-expand-4f080d19eb792eba.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/014-expand-a9f221c742827ecb.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/015-expand-6db9343d4ff08e6b.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/016-expand-6bf4592752b6ba25.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/017-expand-2eed1f6aaeb459b5.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/018-expand-49fb6c68b6b0d0c7.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/019-expand-96eaa385dee170c4.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/020-expand-05eb71bec0801962.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/021-expand-90f374f3c30db571.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/022-expand-1fe524e359eb5a6d.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/023-expand-d589a8744ec19778.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/024-expand-9f6152cb393a526c.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/025-expand-79c494132efbc7d5.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/026-expand-8bfb908cd7a08f5e.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/shots/027-expand-c28b185533dd21f8.png",
-    "docs/qa/studio-expand-all-2026-02-13T15-24-35-064Z/final-expanded.png"
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/001-expand-c2291ca3f69cace0.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/002-expand-b9874576e2280d47.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/003-expand-3818f0cc1b68f6d5.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/004-expand-e81a7348dfdd06a9.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/005-expand-2a9e04ee7f7d2125.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/006-expand-741d9392966c413c.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/007-expand-9a4b48857a66f3aa.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/008-expand-b84137fe85bf0bdd.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/009-expand-76d26c181cefd123.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/010-expand-ec8d21f48aad4da9.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/011-expand-60297f617b2a0379.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/012-expand-c4b231659c8cafef.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/013-expand-4f080d19eb792eba.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/014-expand-a9f221c742827ecb.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/015-expand-6db9343d4ff08e6b.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/016-expand-6bf4592752b6ba25.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/017-expand-2eed1f6aaeb459b5.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/018-expand-49fb6c68b6b0d0c7.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/019-expand-96eaa385dee170c4.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/020-expand-05eb71bec0801962.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/021-expand-90f374f3c30db571.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/022-expand-1fe524e359eb5a6d.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/023-expand-d589a8744ec19778.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/024-expand-9f6152cb393a526c.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/025-expand-79c494132efbc7d5.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/026-expand-8bfb908cd7a08f5e.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/shots/027-expand-c28b185533dd21f8.png",
+    "docs/qa/studio-expand-all-2026-02-20T02-00-15-295Z/final-expanded.png"
   ],
   "expandSteps": [
     {
@@ -39,7 +39,10 @@
       "expandedNodeName": "backend",
       "expandedNodeLevel": 2,
       "containerCount": 3,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 2,
@@ -47,7 +50,10 @@
       "expandedNodeName": "src",
       "expandedNodeLevel": 2,
       "containerCount": 5,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 3,
@@ -55,7 +61,10 @@
       "expandedNodeName": "test",
       "expandedNodeLevel": 2,
       "containerCount": 7,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 4,
@@ -63,7 +72,10 @@
       "expandedNodeName": "archsync",
       "expandedNodeLevel": 2,
       "containerCount": 9,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 5,
@@ -71,7 +83,10 @@
       "expandedNodeName": "tests",
       "expandedNodeLevel": 2,
       "containerCount": 10,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 6,
@@ -79,7 +94,10 @@
       "expandedNodeName": "vscode-extension",
       "expandedNodeLevel": 2,
       "containerCount": 11,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 7,
@@ -87,7 +105,10 @@
       "expandedNodeName": "frontend",
       "expandedNodeLevel": 2,
       "containerCount": 12,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 8,
@@ -95,7 +116,10 @@
       "expandedNodeName": "tests",
       "expandedNodeLevel": 3,
       "containerCount": 13,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 9,
@@ -103,7 +127,10 @@
       "expandedNodeName": "studio",
       "expandedNodeLevel": 3,
       "containerCount": 14,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 10,
@@ -111,7 +138,10 @@
       "expandedNodeName": "src",
       "expandedNodeLevel": 3,
       "containerCount": 15,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 11,
@@ -119,7 +149,10 @@
       "expandedNodeName": "archsync",
       "expandedNodeLevel": 4,
       "containerCount": 16,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 12,
@@ -127,7 +160,10 @@
       "expandedNodeName": "fixtures",
       "expandedNodeLevel": 4,
       "containerCount": 17,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 13,
@@ -135,7 +171,10 @@
       "expandedNodeName": "analyzers",
       "expandedNodeLevel": 5,
       "containerCount": 18,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 14,
@@ -143,7 +182,10 @@
       "expandedNodeName": "model",
       "expandedNodeLevel": 5,
       "containerCount": 19,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 15,
@@ -151,7 +193,10 @@
       "expandedNodeName": "diff",
       "expandedNodeLevel": 5,
       "containerCount": 20,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 16,
@@ -159,7 +204,10 @@
       "expandedNodeName": "watch",
       "expandedNodeLevel": 5,
       "containerCount": 21,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 17,
@@ -167,7 +215,10 @@
       "expandedNodeName": "llm",
       "expandedNodeLevel": 5,
       "containerCount": 22,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 18,
@@ -175,7 +226,10 @@
       "expandedNodeName": "render",
       "expandedNodeLevel": 5,
       "containerCount": 23,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 19,
@@ -183,7 +237,10 @@
       "expandedNodeName": "quality",
       "expandedNodeLevel": 5,
       "containerCount": 24,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 20,
@@ -191,7 +248,10 @@
       "expandedNodeName": "storage",
       "expandedNodeLevel": 5,
       "containerCount": 25,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 21,
@@ -199,7 +259,10 @@
       "expandedNodeName": "sample_repo",
       "expandedNodeLevel": 5,
       "containerCount": 26,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 22,
@@ -207,7 +270,10 @@
       "expandedNodeName": "cpp_repo",
       "expandedNodeLevel": 5,
       "containerCount": 27,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 23,
@@ -215,7 +281,10 @@
       "expandedNodeName": "src",
       "expandedNodeLevel": 6,
       "containerCount": 28,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 24,
@@ -223,7 +292,10 @@
       "expandedNodeName": "frontend",
       "expandedNodeLevel": 6,
       "containerCount": 29,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 25,
@@ -231,7 +303,10 @@
       "expandedNodeName": "backend",
       "expandedNodeLevel": 6,
       "containerCount": 30,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 26,
@@ -239,7 +314,10 @@
       "expandedNodeName": "src",
       "expandedNodeLevel": 7,
       "containerCount": 31,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     },
     {
       "step": 27,
@@ -247,15 +325,22 @@
       "expandedNodeName": "service",
       "expandedNodeLevel": 7,
       "containerCount": 32,
-      "overlapViolationCount": 0
+      "overlapViolationCount": 0,
+      "containmentViolationCount": 0,
+      "headerContainmentViolationCount": 0,
+      "nodeContainmentViolationCount": 0
     }
   ],
   "violations": [],
   "final": {
     "stepCount": 27,
     "containerCount": 32,
-    "overlapViolationCount": 0
+    "nodeCount": 69,
+    "overlapViolationCount": 0,
+    "containmentViolationCount": 0,
+    "headerContainmentViolationCount": 0,
+    "nodeContainmentViolationCount": 0
   },
-  "finishedAt": "2026-02-13T15:25:07.528Z",
+  "finishedAt": "2026-02-20T02:00:40.579Z",
   "ok": true
 }
